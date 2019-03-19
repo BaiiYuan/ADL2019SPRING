@@ -15,6 +15,7 @@ from sys import stdout
 from IPython import embed
 from collections import Counter
 from gensim.models import Word2Vec
+from tqdm import tqdm
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 
@@ -24,7 +25,7 @@ def get_embedding(args, arr, vectors, mean_vector):
     if len(arr) > args.max_length:
         arr = arr[-args.max_length:]
     arr = [vectors[i] for i in arr]
-    else if len(arr) < args.max_length:
+    if len(arr) < args.max_length:
         arr = arr + [np.zeros(300) for _ in range(args.max_length-len(arr))]
     assert(len(arr)==args.max_length)
     return arr
@@ -32,7 +33,9 @@ def get_embedding(args, arr, vectors, mean_vector):
 def calculateRecall(datas, model, vectors, mean_vector, at=10):
     model.eval()
     recall = []
-    for uni_data in datas:
+
+    for cou in tqdm(range(len(datas))):
+        uni_data = datas[cou]
         input_data = []
         records = uni_data['records']
         wa = uni_data['wrong_answer']
@@ -42,7 +45,13 @@ def calculateRecall(datas, model, vectors, mean_vector, at=10):
             input_data.append(get_embedding(args, records+wa[i], vectors, mean_vector))
         input_data = torch.tensor(input_data, dtype=torch.float)
         pred = model(input_data.to(device))
-        embed()
+        pred = nn.Sigmoid()(pred)
+        out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
+        if 0 in out:
+            recall.append(1)
+        else:
+            recall.append(0)
+    return np.mean(recall)
 
 def random_sample(dataset, args, rate=3):
     out = []
@@ -57,33 +66,43 @@ def random_sample(dataset, args, rate=3):
     return out
 
 
-def load_data(args):
+def load_data(args, vectors, mean_vector):
     print("Load prepro-data...")
     dataset = {}
+
     with open(os.path.join(args.data_path, "train.pkl"), "rb") as f:
         train_data = pickle.load(f)
-    with open(os.path.join(args.data_path, "valid.pkl"), "rb") as f:
-        valid_data = pickle.load(f)
-    with open(os.path.join(args.data_path, "test.pkl"), "rb") as f:
-        dataset['test'] = pickle.load(f)
-    print("Finish Loading!")
-
     for cou in range(len(train_data)):
         records = train_data[cou]['records']
         train_data[cou]['records'] = (" ".join([" ".join(i) for i in records])).split()
     dataset['train'] = random_sample(train_data, args)
-    dataset['train'] = cutMaxLength(args, dataset['train'])
+    print("Training data finish")
 
-    # for cou in range(len(valid_data)):
-    #     records = valid_data[cou]['records']
-    #     valid_data[cou]['records'] = (" ".join([" ".join(i) for i in records])).split()
-    # dataset['valid'] = valid_data
+    with open(os.path.join(args.data_path, "valid.pkl"), "rb") as f:
+        valid_data = pickle.load(f)
+    for cou in range(len(valid_data)):
+        records = valid_data[cou]['records']
+        valid_data[cou]['records'] = (" ".join([" ".join(i) for i in records])).split()
+    dataset['valid'] = valid_data
+
+    print("Validation data finish")
+
+    # with open(os.path.join(args.data_path, "test.pkl"), "rb") as f:
+    #     test_data = pickle.load(f)
+    # for cou in range(len(test_data)):
+    #     records = test_data[cou]['records']
+    #     test_data[cou]['records'] = (" ".join([" ".join(i) for i in records])).split()
+    # dataset['test'] = test_data
+    # print("Testing data finish")
 
     return dataset
 
-def create_model(argsargs):
+def create_model(args):
     print("Create model.")
-    model = models.RNNbase(window_size=args.max_length)
+    model = models.RNNbase(window_size=args.max_length
+                           # embedding_size=128,
+                           # hidden_size=64
+                        )
     # model = models.RNNatt()
 
     print(model)
@@ -148,6 +167,7 @@ def train(args, epoch, dataset, model, optimization, objective, vectors, mean_ve
 
     print(" Spends {:.2f} seconds.".format(time.time() - t1))
     print("The Training dataset Accuracy is {:.2f}%, Loss is {:.4f}".format(np.mean(epoch_acc)*100, np.mean(epoch_loss)))
+    return model
 
 def load_embedding():
     word_model = Word2Vec.load("Word2Vec_V1.h5")
@@ -160,14 +180,17 @@ def trainInit(args):
     model = create_model(args)
     optimization = optim.Adam(model.parameters(), lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
     objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([3.])).to(device)
-    dataset = load_data(args)
+    dataset = load_data(args, vectors, mean_vector)
     return dataset, model, optimization, objective, vectors, mean_vector
 
 def trainIter(args):
     dataset, model, optimization, objective, vectors, mean_vector = trainInit(args)
-    # calculateRecall(dataset['valid'], model, vectors, mean_vector)
     for epoch in range(args.epochs):
-        train(args, epoch+1, dataset, model, optimization, objective, vectors, mean_vector)
+        print("Validation Recall: {}".format(calculateRecall(dataset['valid'], model, vectors, mean_vector)))
+        model = train(args, epoch+1, dataset, model, optimization, objective, vectors, mean_vector)
+
+def testAll(args):
+    pass
 
 def main(args):
     # init
@@ -183,6 +206,7 @@ def main(args):
 
     if args.train:
         trainIter(args)
+    testAll(args)
 
 if __name__ == '__main__':
     print(device)
@@ -190,7 +214,7 @@ if __name__ == '__main__':
     parser.add_argument('-dp', '--data_path', type=str, default='./gensim_300')
     parser.add_argument('-e', '--epochs', type=int, default=30)
     parser.add_argument('-b', '--batch_size', type=int, default=64)
-    parser.add_argument('-lr', '--lr_rate', type=float, default=1e-4)
+    parser.add_argument('-lr', '--lr_rate', type=float, default=1e-3)
     parser.add_argument('-md', '--model_dump', type=str, default='./model.tar')
     parser.add_argument('-o', '--output_csv', type=str, default='output.csv')
     parser.add_argument('-p', '--print_iter', type=int, default=1e3, help='Print every p iterations')

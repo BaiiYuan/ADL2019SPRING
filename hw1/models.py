@@ -38,7 +38,6 @@ class RNNbase(nn.Module):
         rnn_output1, hn_1 = self.gru1(x) # hn1: (1, batch, hidden)
         # rnn_output2, hn_2 = self.gru2(rnn_output1) # hn2: (1, batch, hidden)
         pred = self.classify(rnn_output1[:, 0])
-
         return pred.squeeze(1)
 
 class RNNatt(nn.Module):
@@ -82,7 +81,7 @@ class RNNatt(nn.Module):
 
 if __name__ == "__main__":
     model = RNNbase()
-    seq_in = torch.randn(64, 200, 300)
+    seq_in = torch.randn(24, 200, 300)
 
     y = model(seq_in)
     print("seq_in: {}, y: {}".format(seq_in.size(), y.size()))
