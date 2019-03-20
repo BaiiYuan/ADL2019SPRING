@@ -40,8 +40,11 @@ class RNNbase(nn.Module):
     def forward(self, input_data_rec, input_data_rep):
         batch_size = input_data_rec.shape[0]
 
-        x_rec = self.embedd(input_data_rec)
-        x_rep = self.embedd(input_data_rep)
+        x_rec = self.word_embedding(input_data_rec)
+        x_rep = self.word_embedding(input_data_rep)
+
+        x_rec = self.embedd(x_rec)
+        x_rep = self.embedd(x_rep)
 
         rnn_output1_rec, hn_1_rec = self.gru1(x_rec) # hn1: (1, batch, hidden)
         rnn_output1_rep, hn_1_rep = self.gru1(x_rep) # hn1: (1, batch, hidden)

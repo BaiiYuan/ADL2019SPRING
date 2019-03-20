@@ -30,18 +30,6 @@ device = "cuda" if torch.cuda.is_available else "cpu"
 
 Draw = []
 
-# def get_embedding(max_length, arr, vectors, mean_vector, rec=True):
-#     if len(arr) > max_length:
-#         if rec:
-#             arr = arr[-max_length:]
-#         else:
-#             arr = arr[:max_length]
-#     arr = [vectors[i] for i in arr]
-#     if len(arr) < max_length:
-#         arr = arr + [np.zeros(300) for _ in range(max_length-len(arr))]
-#     assert(len(arr)==max_length)
-#     return arr
-
 def tokenize(max_length, arr, word2idx, rec=True):
     if len(arr) > max_length:
         if rec:
@@ -84,7 +72,6 @@ def random_sample(dataset, args, word2idx, rate=3):
         for item in wa_sam:
             item = tokenize(16, item, word2idx)
             out.append([records, item, 0])
-    embed()
     return out
 
 def load_data(args, word2idx):
@@ -103,7 +90,7 @@ def load_data(args, word2idx):
 
 
 
-def data_generator(args, data, batch_size_origin, vectors, mean_vector, shuffle=True):
+def data_generator(args, data, batch_size_origin, shuffle=True):
     if shuffle:
         used_data = random.sample(data, len(data))
     else:
@@ -121,21 +108,16 @@ def data_generator(args, data, batch_size_origin, vectors, mean_vector, shuffle=
 
         batch_data = used_data[start:end]
         input_data_rec, input_data_rep, labels = zip(*batch_data)
-        embed()
-        rep_len = args.max_length//8
-        rec_len = args.max_length-rep_len
-        input_data_rec = [get_embedding(rec_len, item, vectors, mean_vector) for item in input_data_rec]
-        input_data_rep = [get_embedding(rep_len, item, vectors, mean_vector, rec=False) for item in input_data_rep]
 
-        input_data_rec = torch.tensor(input_data_rec, dtype=torch.int32)
-        input_data_rep = torch.tensor(input_data_rep, dtype=torch.int32)
+        input_data_rec = torch.tensor(input_data_rec, dtype=torch.long)
+        input_data_rep = torch.tensor(input_data_rep, dtype=torch.long)
         labels = torch.tensor(labels, dtype=torch.float32)
 
         yield input_data_rec.to(device), input_data_rep.to(device), labels.to(device)
 
 def old_train(args, epoch, dataset, objective):
     # TODO: prepare training data and validation
-    gen = data_generator(args, dataset['train'], args.batch_size, vectors, mean_vector, shuffle=True)  # generate train data
+    gen = data_generator(args, dataset['train'], args.batch_size, shuffle=True)  # generate train data
 
     t1 = time.time()
     epoch_loss = []
@@ -145,7 +127,7 @@ def old_train(args, epoch, dataset, objective):
     for  idx, (input_data_rec, input_data_rep, labels) in enumerate(gen):
         # Forward and backward.
         optimizer.zero_grad()
-        embed()
+        # embed()
         pred = model(input_data_rec, input_data_rep)
         loss = objective(pred, labels)
 
@@ -168,53 +150,6 @@ def old_train(args, epoch, dataset, objective):
     print(" Spends {:.2f} seconds.".format(time.time() - t1))
     print("> The Training dataset Accuracy is {:.2f}%, Loss is {:.4f}".format(np.mean(epoch_acc)*100, np.mean(epoch_loss)))
 
-# def train(args, epoch, objective, vectors, mean_vector):
-#     # TODO: prepare training data and validation
-
-#     t1 = time.time()
-#     epoch_loss = []
-#     epoch_acc = []
-#     model.train(True)
-#     idx = 0
-
-#     assert args.batch_size%4 == 0
-#     labels = torch.tensor([1., 0., 0., 0.]*(args.batch_size//4), dtype=torch.float32).to(device)
-
-#     steps_per_epoch = 4*100000 // args.batch_size
-#     for _local_batch in training_generator:
-#         # Forward and backward.
-#         local_batch = _local_batch[0].to(device)
-#         for cou in range(local_batch.shape[0]//args.batch_size):
-
-#             start = cou * args.batch_size
-#             end = (cou + 1) * args.batch_size
-#             input_data = local_batch[start:end]
-
-#             optimizer.zero_grad()
-
-#             pred = model(input_data)
-#             loss = objective(pred, labels)
-
-#             loss.backward()
-#             optimizer.step()
-
-#             # clip = 50.0
-#             # _ = torch.nn.utils.clip_grad_norm_(encoder.parameters(), clip)
-
-#             loss = loss.data.cpu().item()
-#             acc = (nn.Sigmoid()(pred).round() == labels).float().cpu().tolist()
-#             epoch_loss.append(loss)
-#             epoch_acc.append(acc)
-
-#             Iter = 100.0 * (idx + 1) / steps_per_epoch
-#             stdout.write("\rEpoch: {}/{}, Iter: {:.1f}%, Loss: {:.4f}, Acc: {:.4f}".format(epoch, args.epochs, Iter, np.mean(epoch_loss), np.mean(epoch_acc)))
-#             if (idx + 1) % args.print_iter == 0 :
-#                 print(" ")
-#             idx += 1
-
-#     print("> Spends {:.2f} seconds.".format(time.time() - t1))
-#     print("> The Training dataset Accuracy is {:.2f}%, Loss is {:.4f}".format(np.mean(epoch_acc)*100, np.mean(epoch_loss)))
-#     return model, optimizer
 
 def create_model(args):
     print("Create model.")
