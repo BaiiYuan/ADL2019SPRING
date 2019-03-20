@@ -20,6 +20,9 @@ from tqdm import tqdm
 
 from data import DatasetWithoutLabel
 
+rec_len = 150
+rep_len = 30
+
 # training_set = DatasetWithoutLabel(["train-{}".format(i) for i in range(1, 41)])
 # training_generator = data.DataLoader(training_set)
 
@@ -42,37 +45,61 @@ def tokenize(max_length, arr, word2idx, rec=True):
     assert(len(arr)==max_length)
     return arr
 
-def calculateRecall(model, vectors, mean_vector, at=10):
+def calculateRecall(model, dataset, at=10):
+    datas = dataset['valid']
     model.eval()
     recall = []
     print("Calculating Recall ...")
-    for local_batch in validation_generator:
-        for cou in range(100):
-            input_data = local_batch[0][cou]
-            pred = model(input_data.to(device))
-            pred = nn.Sigmoid()(pred)
-            out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
-            if 0 in out:
-                recall.append(1)
-            else:
-                recall.append(0)
+    for data in datas:
+        input_data_rec, input_data_rep = zip(*data)
+        input_data_rec = torch.tensor(input_data_rec, dtype=torch.long)
+        input_data_rep = torch.tensor(input_data_rep, dtype=torch.long)
+
+        input_data_rec = input_data_rec.to(device)
+        input_data_rep = input_data_rep.to(device)
+
+        pred = model(input_data_rec, input_data_rep)
+        pred = nn.Sigmoid()(pred)
+        out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
+        if 0 in out:
+            recall.append(1)
+        else:
+            recall.append(0)
+    embed()
     return np.mean(recall)
 
 def random_sample(dataset, args, word2idx, rate=3):
     out = []
     for i in dataset:
         records = i['records']
-        records = tokenize(112, records, word2idx)
+        records = tokenize(rec_len, records, word2idx)
         ca = i['correct_answer']
-        ca = tokenize(16, ca, word2idx)
+        ca = tokenize(rep_len, ca, word2idx)
         out.append([records, ca, 1])
 
         wa = i['wrong_answer']
         wa_sam = random.sample(wa, rate)
         for item in wa_sam:
-            item = tokenize(16, item, word2idx)
+            item = tokenize(rep_len, item, word2idx)
             out.append([records, item, 0])
     return out
+
+def process_valid_data(data_dict, word2idx):
+    out = []
+    records = data_dict['records']
+    records = (" ".join([" ".join(i) for i in records])).split()
+    records = tokenize(rec_len, records, word2idx)
+
+    ca = data_dict['correct_answer']
+    ca = tokenize(rep_len, ca, word2idx)
+    out.append([records, ca])
+
+    wa = data_dict['wrong_answer']
+    for item in wa:
+        item = tokenize(rep_len, item, word2idx)
+        out.append([records, item])
+    return out
+
 
 def load_data(args, word2idx):
     print("Load prepro-data...")
@@ -86,9 +113,15 @@ def load_data(args, word2idx):
     dataset['train'] = random_sample(train_data, args, word2idx)
     print("Training data finish")
 
+    with open(os.path.join(args.data_path, "valid.pkl"), "rb") as f:
+        valid_data = pickle.load(f)
+    tmp = []
+    for item in valid_data:
+        tmp.append(process_valid_data(item, word2idx))
+    dataset['valid'] = tmp
+    print("Validation data finish")
+
     return dataset
-
-
 
 def data_generator(args, data, batch_size_origin, shuffle=True):
     if shuffle:
@@ -147,7 +180,7 @@ def old_train(args, epoch, dataset, objective):
         if (idx + 1) % args.print_iter == 0 :
             print(" ")
 
-    print(" Spends {:.2f} seconds.".format(time.time() - t1))
+    print("> Spends {:.2f} seconds.".format(time.time() - t1))
     print("> The Training dataset Accuracy is {:.2f}%, Loss is {:.4f}".format(np.mean(epoch_acc)*100, np.mean(epoch_loss)))
 
 
@@ -162,8 +195,8 @@ def create_model(args):
 
     global model
     model = models.RNNbase(window_size=args.max_length,
-                           embedding_size=128,
-                           hidden_size=64,
+                           # embedding_size=128,
+                           # hidden_size=64,
                            num_of_words=len(all_words)+1
                         )
     # model = models.RNNatt()
@@ -181,17 +214,17 @@ def trainIter(args):
     dataset, objective, word2idx, idx2word = trainInit(args)
     for epoch in range(args.epochs):
         old_train(args, epoch+1, dataset, objective)
-        # score = calculateRecall(model, vectors, mean_vector)
-        # if score > max_recall:
-        #     max_recall = score
-        #     save_model(args, epoch)
-        # print("> Validation Recall: {}".format(score))
+        score = calculateRecall(model, dataset)
+        print(f"> Validation Recall: {score}")
+        if score > max_recall:
+            max_recall = score
+            save_model(args, epoch)
 
 def trainInit(args):
     word2idx, idx2word = create_model(args)
     global optimizer
     optimizer = optim.Adam(model.parameters(), lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
-    objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([3.])).to(device)
+    objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([3])).to(device)
     dataset = load_data(args, word2idx)
     return dataset, objective, word2idx, idx2word
 
@@ -229,7 +262,7 @@ if __name__ == '__main__':
     parser.add_argument('-dp', '--data_path', type=str, default='./gensim_300')
     parser.add_argument('-e', '--epochs', type=int, default=30)
     parser.add_argument('-b', '--batch_size', type=int, default=100)
-    parser.add_argument('-lr', '--lr_rate', type=float, default=1e-4)
+    parser.add_argument('-lr', '--lr_rate', type=float, default=1e-6)
     parser.add_argument('-md', '--model_dump', type=str, default='./model.tar')
     parser.add_argument('-o', '--output_csv', type=str, default='output.csv')
     parser.add_argument('-p', '--print_iter', type=int, default=1e3, help='Print every p iterations')

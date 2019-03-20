@@ -23,19 +23,21 @@ class RNNbase(nn.Module):
                       nn.ReLU() # Can not add Dropout
                       )
 
-        self.gru1 = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True)
+        self.gru1_rec = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
+        self.gru1_rep = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
         # for i in range(4):
         #     self.gru1.all_weights[0][i] = nn.init.xavier_normal_(self.gru1.all_weights[0][i])
 
         # self.gru2 = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True)
         self.classify = nn.Sequential(
                         # nn.Dropout(0.2),
-                        nn.Linear(self.hidden_size, 32),
+                        nn.Linear(self.hidden_size*2, 32),
                         nn.ReLU(),
                         # nn.Dropout(0.2),
                         nn.Linear(32, self.classes),
                         # nn.Sigmoid()
                         )
+        self.weight = nn.Linear(self.hidden_size*2, self.hidden_size*2)
 
     def forward(self, input_data_rec, input_data_rep):
         batch_size = input_data_rec.shape[0]
@@ -43,21 +45,27 @@ class RNNbase(nn.Module):
         x_rec = self.word_embedding(input_data_rec)
         x_rep = self.word_embedding(input_data_rep)
 
-        x_rec = self.embedd(x_rec)
-        x_rep = self.embedd(x_rep)
+        x_rec = F.relu(self.embedd(x_rec))
+        x_rep = F.relu(self.embedd(x_rep))
 
-        rnn_output1_rec, hn_1_rec = self.gru1(x_rec) # hn1: (1, batch, hidden)
-        rnn_output1_rep, hn_1_rep = self.gru1(x_rep) # hn1: (1, batch, hidden)
+        rnn_output1_rec, hn_1_rec = self.gru1_rec(x_rec) # hn1: (1, batch, hidden)
+        rnn_output1_rep, hn_1_rep = self.gru1_rep(x_rep) # hn1: (1, batch, hidden)
 
         output_rec = rnn_output1_rec.mean(dim=1)
         output_rep = rnn_output1_rec.mean(dim=1)
 
+        # concat = torch.cat((output_rec, output_rep), dim=1)
+        # pred = self.classify(concat).squeeze()
+
         # inner product batch-wise
+        output_rec = self.weight(output_rec)
+        output_rec = F.relu(output_rec)
         pred = torch.bmm(output_rec.view(batch_size, 1, -1), output_rep.view(batch_size, -1, 1))
         pred = pred.squeeze()
+
+
         # rnn_output2, hn_2 = self.gru2(rnn_output1) # hn2: (1, batch, hidden)
         # pred = self.classify(rnn_output1[:, 0])
-        # embed()
         return pred
 
 class RNNatt(nn.Module):
