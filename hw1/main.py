@@ -10,6 +10,7 @@ import random
 import pickle
 import argparse
 import numpy as np
+import pandas as pd
 
 import models
 from sys import stdout
@@ -20,14 +21,8 @@ from tqdm import tqdm
 
 from data import DatasetWithoutLabel
 
-rec_len = 150
-rep_len = 30
-
-# training_set = DatasetWithoutLabel(["train-{}".format(i) for i in range(1, 41)])
-# training_generator = data.DataLoader(training_set)
-
-validation_set = DatasetWithoutLabel(["valid-{}".format(i) for i in range(1, 51)])
-validation_generator = data.DataLoader(validation_set)
+rec_len = 112
+rep_len = 16
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 
@@ -44,29 +39,6 @@ def tokenize(max_length, arr, word2idx, rec=True):
         arr = arr + [0 for _ in range(max_length-len(arr))]
     assert(len(arr)==max_length)
     return arr
-
-def calculateRecall(model, dataset, at=10):
-    datas = dataset['valid']
-    model.eval()
-    recall = []
-    print("Calculating Recall ...")
-    for data in datas:
-        input_data_rec, input_data_rep = zip(*data)
-        input_data_rec = torch.tensor(input_data_rec, dtype=torch.long)
-        input_data_rep = torch.tensor(input_data_rep, dtype=torch.long)
-
-        input_data_rec = input_data_rec.to(device)
-        input_data_rep = input_data_rep.to(device)
-
-        pred = model(input_data_rec, input_data_rep)
-        pred = nn.Sigmoid()(pred)
-        out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
-        if 0 in out:
-            recall.append(1)
-        else:
-            recall.append(0)
-    embed()
-    return np.mean(recall)
 
 def random_sample(dataset, args, word2idx, rate=3):
     out = []
@@ -101,6 +73,19 @@ def process_valid_data(data_dict, word2idx):
     return out
 
 
+def process_test_data(data_dict, word2idx):
+    out = []
+    records = data_dict['records']
+    records = (" ".join([" ".join(i) for i in records])).split()
+    records = tokenize(rec_len, records, word2idx)
+
+    wa = data_dict['wrong_answer']
+    for item in wa:
+        item = tokenize(rep_len, item, word2idx)
+        out.append([records, item])
+    return out
+
+
 def load_data(args, word2idx):
     print("Load prepro-data...")
     dataset = {}
@@ -122,6 +107,18 @@ def load_data(args, word2idx):
     print("Validation data finish")
 
     return dataset
+
+def load_test_data(args, word2idx):
+    print("Load prepro-data...")
+
+    with open(os.path.join(args.data_path, "test.pkl"), "rb") as f:
+        valid_data = pickle.load(f)
+    test_data = []
+    for item in valid_data:
+        test_data.append(process_test_data(item, word2idx))
+    print("Testing data finish")
+
+    return test_data
 
 def data_generator(args, data, batch_size_origin, shuffle=True):
     if shuffle:
@@ -184,6 +181,53 @@ def old_train(args, epoch, dataset, objective):
     print("> The Training dataset Accuracy is {:.2f}%, Loss is {:.4f}".format(np.mean(epoch_acc)*100, np.mean(epoch_loss)))
 
 
+def trainIter(args):
+    max_recall = 0
+    dataset, objective, word2idx, idx2word = trainInit(args)
+
+    for epoch in range(args.epochs):
+        old_train(args, epoch+1, dataset, objective)
+
+        score = calculateRecall(model, dataset)
+        print(f"> Validation Recall: {score}")
+
+        if score > max_recall:
+            max_recall = score
+            save_model(args, epoch)
+
+
+def trainInit(args):
+    word2idx, idx2word = create_model(args)
+    global optimizer
+    optimizer = optim.Adam(model.parameters(), lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
+    objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([3])).to(device)
+    dataset = load_data(args, word2idx)
+    return dataset, objective, word2idx, idx2word
+
+
+def calculateRecall(model, dataset, at=10):
+    datas = dataset['valid']
+    model.eval()
+    recall = []
+    print("Calculating Recall ...")
+    for data in datas:
+        input_data_rec, input_data_rep = zip(*data)
+        input_data_rec = torch.tensor(input_data_rec, dtype=torch.long)
+        input_data_rep = torch.tensor(input_data_rep, dtype=torch.long)
+
+        input_data_rec = input_data_rec.to(device)
+        input_data_rep = input_data_rep.to(device)
+
+        pred = model(input_data_rec, input_data_rep)
+        pred = nn.Sigmoid()(pred)
+        out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
+        if 0 in out:
+            recall.append(1)
+        else:
+            recall.append(0)
+    return np.mean(recall)
+
+
 def create_model(args):
     print("Create model.")
     word_model = Word2Vec.load("Word2Vec_V1.h5")
@@ -195,8 +239,8 @@ def create_model(args):
 
     global model
     model = models.RNNbase(window_size=args.max_length,
-                           # embedding_size=128,
-                           # hidden_size=64,
+                           embedding_size=512,
+                           hidden_size=256,
                            num_of_words=len(all_words)+1
                         )
     # model = models.RNNatt()
@@ -209,26 +253,6 @@ def create_model(args):
     print(model)
     return word2idx, idx2word
 
-def trainIter(args):
-    max_recall = 0
-    dataset, objective, word2idx, idx2word = trainInit(args)
-    for epoch in range(args.epochs):
-        old_train(args, epoch+1, dataset, objective)
-        score = calculateRecall(model, dataset)
-        print(f"> Validation Recall: {score}")
-        if score > max_recall:
-            max_recall = score
-            save_model(args, epoch)
-
-def trainInit(args):
-    word2idx, idx2word = create_model(args)
-    global optimizer
-    optimizer = optim.Adam(model.parameters(), lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
-    objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([3])).to(device)
-    dataset = load_data(args, word2idx)
-    return dataset, objective, word2idx, idx2word
-
-
 def save_model(args, epoch):
     print("Saving Model...")
     torch.save({
@@ -237,8 +261,34 @@ def save_model(args, epoch):
         'opt': optimizer.state_dict(),
     }, args.model_dump)
 
+def load_model(args):
+    ckpt = torch.load(args.model_dump)
+    model.load_state_dict(ckpt['model'])
+
+
 def testAll(args):
-    pass
+    word2idx, idx2word = create_model(args)
+    test_data = load_test_data(args, word2idx)
+    do_predict(args, test_data)
+
+def do_predict(args, test_data):
+    write = []
+    for cou, data in enumerate(test_data):
+        input_data_rec, input_data_rep = zip(*data)
+        input_data_rec = torch.tensor(input_data_rec, dtype=torch.long)
+        input_data_rep = torch.tensor(input_data_rep, dtype=torch.long)
+
+        input_data_rec = input_data_rec.to(device)
+        input_data_rep = input_data_rep.to(device)
+
+        pred = model(input_data_rec, input_data_rep)
+        pred = nn.Sigmoid()(pred)
+        out = pred.detach().cpu().numpy().argsort()[::-1].tolist()[:10]
+        out = "".join(["1-" if i in out else "0-" for i in range(100)])
+        write.append((cou+9000001, out))
+
+    df = pd.DataFrame(write, columns=['Id', 'Predict'])
+    df.to_csv(args.output_csv, index=None)
 
 def main(args):
     # init
@@ -262,9 +312,9 @@ if __name__ == '__main__':
     parser.add_argument('-dp', '--data_path', type=str, default='./gensim_300')
     parser.add_argument('-e', '--epochs', type=int, default=30)
     parser.add_argument('-b', '--batch_size', type=int, default=100)
-    parser.add_argument('-lr', '--lr_rate', type=float, default=1e-6)
+    parser.add_argument('-lr', '--lr_rate', type=float, default=1e-4)
     parser.add_argument('-md', '--model_dump', type=str, default='./model.tar')
-    parser.add_argument('-o', '--output_csv', type=str, default='output.csv')
+    parser.add_argument('-o', '--output_csv', type=str, default='./output.csv')
     parser.add_argument('-p', '--print_iter', type=int, default=1e3, help='Print every p iterations')
     parser.add_argument('-s', '--save_iter', type=int, default=30, help='Save every p iterations')
     parser.add_argument('-ml', '--max_length', type=int, default=128, help='Max dialogue length')

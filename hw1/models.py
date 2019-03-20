@@ -6,7 +6,7 @@ from IPython import embed
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 class RNNbase(nn.Module):
-    def __init__(self, input_size=300, classes=1, embedding_size=512, hidden_size=256, window_size=128, drop_p=0.2, num_of_words=80000):
+    def __init__(self, input_size=300, classes=1, embedding_size=256, hidden_size=32, window_size=128, drop_p=0.2, num_of_words=80000):
         super(RNNbase, self).__init__()
 
         self.input_size = input_size
@@ -25,8 +25,8 @@ class RNNbase(nn.Module):
 
         self.gru1_rec = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
         self.gru1_rep = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
-        # for i in range(4):
-        #     self.gru1.all_weights[0][i] = nn.init.xavier_normal_(self.gru1.all_weights[0][i])
+        # self.lstm1_rec = nn.LSTM(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
+        # self.lstm1_rep = nn.LSTM(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
 
         # self.gru2 = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True)
         self.classify = nn.Sequential(
@@ -50,9 +50,11 @@ class RNNbase(nn.Module):
 
         rnn_output1_rec, hn_1_rec = self.gru1_rec(x_rec) # hn1: (1, batch, hidden)
         rnn_output1_rep, hn_1_rep = self.gru1_rep(x_rep) # hn1: (1, batch, hidden)
+        # rnn_output1_rec, hn_1_rec = self.lstm1_rec(x_rec) # hn1: (1, batch, hidden)
+        # rnn_output1_rep, hn_1_rep = self.lstm1_rep(x_rep) # hn1: (1, batch, hidden)
 
-        output_rec = rnn_output1_rec.mean(dim=1)
-        output_rep = rnn_output1_rec.mean(dim=1)
+        output_rec = rnn_output1_rec[:,-1]
+        output_rep = rnn_output1_rep[:,-1]
 
         # concat = torch.cat((output_rec, output_rep), dim=1)
         # pred = self.classify(concat).squeeze()
@@ -63,9 +65,8 @@ class RNNbase(nn.Module):
         pred = torch.bmm(output_rec.view(batch_size, 1, -1), output_rep.view(batch_size, -1, 1))
         pred = pred.squeeze()
 
+        # embed()
 
-        # rnn_output2, hn_2 = self.gru2(rnn_output1) # hn2: (1, batch, hidden)
-        # pred = self.classify(rnn_output1[:, 0])
         return pred
 
 class RNNatt(nn.Module):
