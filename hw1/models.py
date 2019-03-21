@@ -30,14 +30,7 @@ class RNNbase(nn.Module):
         # self.lstm1_rec = nn.LSTM(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
         # self.lstm1_rep = nn.LSTM(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
 
-        self.classify = nn.Sequential(
-                        # nn.Dropout(0.2),
-                        nn.Linear(self.hidden_size*2, 32),
-                        nn.ReLU(),
-                        # nn.Dropout(0.2),
-                        nn.Linear(32, self.classes),
-                        # nn.Sigmoid()
-                        )
+        
         self.weight = nn.Linear(self.hidden_size*2, self.hidden_size*2)
 
     def forward(self, input_data_rec, input_data_rep):
@@ -67,10 +60,7 @@ class RNNbase(nn.Module):
         pred = torch.bmm(output_rec.view(batch_size, 1, -1), output_rep.view(batch_size, -1, 1))
         pred = pred.squeeze()
 
-        # concat = torch.cat((output_rec, output_rep), dim=1)
-        # pred = self.classify(concat).squeeze()
-
-        embed()
+        # embed()
 
         return pred
 
@@ -99,7 +89,8 @@ class RNNatt(nn.Module):
         self.gru2_rec = nn.GRU(self.hidden_size*2, self.hidden_size, batch_first=True, bidirectional=True)
         self.gru2_rep = nn.GRU(self.hidden_size*2, self.hidden_size, batch_first=True, bidirectional=True)
 
-        self.weight = nn.Linear(self.hidden_size*2, self.hidden_size*2)
+        self.weight1 = nn.Linear(self.hidden_size*2*3, self.hidden_size*2*3)
+        # self.weight2 = nn.Linear(self.hidden_size*2, self.hidden_size*2)
 
     def forward(self, input_data_rec, input_data_rep):
         batch_size = input_data_rec.shape[0]
@@ -124,15 +115,23 @@ class RNNatt(nn.Module):
         attn_applied_rec = torch.bmm(attn_weight_rec, rnn_output1_rec)
         attn_applied_rep = torch.bmm(attn_weight_rep, rnn_output1_rep)
 
-        rnn_output2_rec, hn_2_rec = self.gru2_rec(attn_applied_rec) # hn2: (1, batch, hidden)
-        rnn_output2_rep, hn_2_rep = self.gru2_rep(attn_applied_rep) # hn2: (1, batch, hidden)
+        rnn_output2_rec, hn_2_rec = self.gru2_rec(attn_applied_rec)
+        rnn_output2_rep, hn_2_rep = self.gru2_rep(attn_applied_rep)
 
-        output_rec = rnn_output1_rec[:,-1]
-        output_rep = rnn_output1_rep[:,-1]
+        last_rec = rnn_output2_rec[:,-1]
+        mean_rec = rnn_output2_rec.mean(dim=1)
+        max_rec = rnn_output2_rec.max(dim=1)[0]
+        output_rec = torch.cat((last_rec, mean_rec, max_rec), dim=1)
+
+        last_rep = rnn_output2_rep[:,-1]
+        mean_rep = rnn_output2_rep.mean(dim=1)
+        max_rep = rnn_output2_rep.max(dim=1)[0]
+        output_rep = torch.cat((last_rep, mean_rep, max_rep), dim=1)
 
         # inner product batch-wise
-        output_rec = self.dropout(self.weight(output_rec))
-        output_rec = F.relu(output_rec)
+        output_rec = self.dropout(self.weight1(output_rec))
+        # output_rec = F.relu(output_rec)
+        # output_rec = self.dropout(self.weight2(output_rec))
         pred = torch.bmm(output_rec.view(batch_size, 1, -1), output_rep.view(batch_size, -1, 1))
         pred = pred.squeeze()
 

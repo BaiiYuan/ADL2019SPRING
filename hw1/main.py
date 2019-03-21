@@ -290,6 +290,7 @@ def testAll(args):
     word2idx, idx2word = create_model(args)
     print("> Loading trained model and Test")
     max_recall = load_model(args.model_dump)
+    print(f"max_recall: {max_recall}")
     test_data = load_test_data(args, word2idx)
     do_predict(args, test_data)
 
