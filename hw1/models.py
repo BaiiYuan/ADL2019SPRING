@@ -83,8 +83,8 @@ class RNNatt(nn.Module):
         self.window_size = window_size
         self.dropout = nn.Dropout(drop_p)
 
-        self.gru1_rec = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
-        self.gru1_rep = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
+        self.gru1_rec = nn.GRU(self.input_size, self.hidden_size, batch_first=True, bidirectional=True)
+        self.gru1_rep = nn.GRU(self.input_size, self.hidden_size, batch_first=True, bidirectional=True)
         self.attn1_rec = nn.Linear(self.hidden_size*2, rec_len)
         self.attn1_rep = nn.Linear(self.hidden_size*2, rep_len)
 
