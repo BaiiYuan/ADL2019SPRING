@@ -57,10 +57,10 @@ def main():
     word_model_V2 = Word2Vec.load("Word2Vec_V2.h5")
     vectors2 = word_model_V2.wv
 
-    # crawl = load_vectors("./crawl-300d-2M.vec")
-    # vectors = crawl
+    crawl = load_vectors("./crawl-300d-2M.vec")
+    vectors = crawl
 
-    # embed()
+    embed()
     output = []
     for i in test_data:
         output.append(process_each_data(i, vectors2))

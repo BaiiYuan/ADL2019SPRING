@@ -33,41 +33,43 @@ def tokenize(max_length, arr, word2idx, rec=True):
             arr = arr[-max_length:]
         else:
             arr = arr[:max_length]
-    arr = [word2idx.get(i, 0) for i in arr]
     if len(arr) < max_length:
         arr = arr + [0 for _ in range(max_length-len(arr))]
     assert(len(arr)==max_length)
     return arr
 
 def random_sample(dataset, args, word2idx, rate=neg_nums):
+    for cou in range(len(dataset)):
+        records = dataset[cou]['records']
+        dataset[cou]['records'] = [item for sublist in records for item in sublist]
     out = []
     for i in dataset:
         records = i['records']
         records = tokenize(rec_len, records, word2idx)
         ca = i['correct_answer']
-        ca = tokenize(rep_len, ca, word2idx)
+        ca = tokenize(rep_len, ca, word2idx, rec=False)
         out.append([records, ca, 1])
 
         wa = i['wrong_answer']
         wa_sam = random.sample(wa, rate)
         for item in wa_sam:
-            item = tokenize(rep_len, item, word2idx)
+            item = tokenize(rep_len, item, word2idx, rec=False)
             out.append([records, item, 0])
     return out
 
 def process_valid_data(data_dict, word2idx):
     out = []
     records = data_dict['records']
-    records = (" ".join([" ".join(i) for i in records])).split()
+    records = [item for sublist in records for item in sublist]
     records = tokenize(rec_len, records, word2idx)
 
     ca = data_dict['correct_answer']
-    ca = tokenize(rep_len, ca, word2idx)
+    ca = tokenize(rep_len, ca, word2idx, rec=False)
     out.append([records, ca])
 
     wa = data_dict['wrong_answer']
     for item in wa:
-        item = tokenize(rep_len, item, word2idx)
+        item = tokenize(rep_len, item, word2idx, rec=False)
         out.append([records, item])
     return out
 
@@ -75,7 +77,7 @@ def process_valid_data(data_dict, word2idx):
 def process_test_data(data_dict, word2idx):
     out = []
     records = data_dict['records']
-    records = (" ".join([" ".join(i) for i in records])).split()
+    records = [item for sublist in records for item in sublist]
     records = tokenize(rec_len, records, word2idx)
 
     wa = data_dict['wrong_answer']
@@ -91,9 +93,6 @@ def load_data(args, word2idx):
 
     with open(os.path.join(args.data_path, "train.pkl"), "rb") as f:
         train_data = pickle.load(f)
-    for cou in range(len(train_data)):
-        records = train_data[cou]['records']
-        train_data[cou]['records'] = (" ".join([" ".join(i) for i in records])).split()
     dataset['train'] = random_sample(train_data, args, word2idx)
     print("> Training data finish")
 
@@ -122,7 +121,7 @@ def load_test_data(args, word2idx):
 def calculateRecall(dataset, at=10):
     datas = dataset['valid']
     model.eval()
-    recall = []
+    recall10, recall5 = [], []
     print("> Calculating Recall ...")
     for data in datas:
         input_data_rec, input_data_rep = zip(*data)
@@ -135,11 +134,11 @@ def calculateRecall(dataset, at=10):
         pred = model(input_data_rec, input_data_rep)
         pred = nn.Sigmoid()(pred)
         out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
-        if 0 in out:
-            recall.append(1)
-        else:
-            recall.append(0)
-    return np.mean(recall)
+        if 0 in out:    recall10.append(1)
+        else:           recall10.append(0)
+        if 0 in out[:5]:    recall5.append(1)
+        else:               recall5.append(0)
+    return np.mean(recall10), np.mean(recall5)
 
 
 def data_generator(args, data, batch_size_origin, shuffle=True):
@@ -209,55 +208,62 @@ def old_train(args, epoch, dataset, objective):
 
 def trainInit(args):
     max_recall = 0
-    word2idx, idx2word = create_model(args)
+    word2idx = create_model(args)
     if args.model_load != None:
         print("> Loading trained model and Train")
         max_recall = load_model(args.model_load)
     objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([neg_nums])).to(device)
     dataset = load_data(args, word2idx)
-    return dataset, objective, word2idx, idx2word, max_recall
+    return dataset, objective, word2idx, max_recall
 
 def trainIter(args):
     max_recall = 0
-    dataset, objective, word2idx, idx2word, max_recall = trainInit(args)
+    dataset, objective, word2idx, max_recall = trainInit(args)
     print(max_recall)
     for epoch in range(args.epochs):
+        # if (epoch+1)%2 == 0:
+        #     dataset = load_data(args, word2idx)
+
         old_train(args, epoch+1, dataset, objective)
+        score10, score5 = calculateRecall(dataset)
+        print(f"> Validation Recall10: {score10} and Recall5: {score5}")
 
-        score = calculateRecall(dataset)
-        print(f"> Validation Recall: {score}")
-
-        if score > max_recall:
-            max_recall = score
+        if score10 > max_recall:
+            max_recall = score10
             save_model(args, epoch, max_recall)
 
 def create_model(args):
     print("> Create model.")
-    word_model = Word2Vec.load("Word2Vec_V1.h5")
-    vectors = word_model.wv
-    all_words = vectors.index2word
-    mean_vector = vectors.vectors.mean(axis=0)
-    idx2word = {cou+1:word for cou, word in enumerate(all_words)}
-    word2idx = {word:cou+1 for cou, word in enumerate(all_words)}
+
+    ## Gensim
+    # word_model = Word2Vec.load("Word2Vec_V1.h5")
+    # vectors = word_model.wv
+    # all_words = vectors.index2word
+    # mean_vector = vectors.vectors.mean(axis=0)
+    # wei = torch.tensor(vectors.vectors, dtype=torch.float)
+    ## Gensim
+
+    with open(os.path.join(args.data_path, "dict&vectors.pkl"), "rb") as f:
+        [word2idx, vectors] = pickle.load(f)
 
     global model
     if args.attn:
         model = models.RNNatt(window_size=args.max_length,
                               embedding_size=512,
                               hidden_size=256,
-                              num_of_words=len(all_words)+1
+                              num_of_words=len(word2idx),
+                              rec_len=rec_len,
+                              rep_len=rep_len
                             )
     else:
         model = models.RNNbase(window_size=args.max_length,
                                embedding_size=512,
                                hidden_size=256,
-                               num_of_words=len(all_words)+1
+                               num_of_words=len(word2idx)
                             )
-        
 
-    wei = torch.tensor(vectors.vectors, dtype=torch.float)
-    model.word_embedding.load_state_dict({'weight': torch.cat((torch.zeros((1, 300)), wei),
-                                                              dim=0)})
+
+    model.word_embedding.load_state_dict({'weight': vectors})
     model.word_embedding.weight.requires_grad = False
 
     model = model.to(device)
@@ -267,7 +273,7 @@ def create_model(args):
     optimizer = optim.Adam(model.parameters(),
                            lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
 
-    return word2idx, idx2word
+    return word2idx
 
 def save_model(args, epoch, max_recall):
     print("Saving Model...")
@@ -287,7 +293,7 @@ def load_model(ckptname):
 
 
 def testAll(args):
-    word2idx, idx2word = create_model(args)
+    word2idx = create_model(args)
     print("> Loading trained model and Test")
     max_recall = load_model(args.model_dump)
     print(f"max_recall: {max_recall}")
@@ -332,7 +338,7 @@ def main(args):
 if __name__ == '__main__':
     print(device)
     parser = argparse.ArgumentParser()
-    parser.add_argument('-dp', '--data_path', type=str, default='./gensim_300')
+    parser.add_argument('-dp', '--data_path', type=str, default='./data')
     parser.add_argument('-e', '--epochs', type=int, default=30)
     parser.add_argument('-b', '--batch_size', type=int, default=100)
     parser.add_argument('-lr', '--lr_rate', type=float, default=1e-4)

@@ -1,11 +1,13 @@
 import torch
 import re
+import io
 import os
 import json
 import gensim
 import pickle
 from gensim.models import Word2Vec
 from IPython import embed
+from sys import stdout
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
@@ -13,6 +15,29 @@ device = torch.device("cuda" if USE_CUDA else "cpu")
 data_path = "./data"
 
 all_sentence = []
+all_words = []
+
+def load_vectors(fname, word_set):
+    fin = io.open(fname, 'r', encoding='utf-8', newline='\n', errors='ignore')
+    n, d = map(int, fin.readline().split())
+    cou = 2 # <unk> as 0
+    word2idx = {'<pad>': 0, '<unk>': 1}
+    vectors = []
+    for line in fin:
+        tokens = line.rstrip().split(' ')
+        if tokens[0] in word_set:
+            if tokens[0] == "<s>":
+                embed()
+            word2idx[tokens[0]] = cou
+            cou += 1
+            stdout.write("\r{}".format(cou))
+            vectors.append([float(v) for v in tokens[1:]])
+    print(" ")
+    vectors = torch.tensor(vectors)
+    vectors = torch.cat([torch.nn.init.uniform_(torch.empty(1, 300)), vectors], dim=0)
+    vectors = torch.cat([torch.zeros(1, 300), vectors], dim=0)
+
+    return word2idx, vectors
 
 def preprocessSentence(raw_sentence):
     a = re.sub(r"([!?])", r" \1 ", raw_sentence)
@@ -20,7 +45,7 @@ def preprocessSentence(raw_sentence):
     a = re.sub(r"\s+", r" ", a).strip()
     a = a.lower()
     # print(raw_sentence);print(a);print("----")
-    return "<s> "+ a +" <e>"
+    return a +" <pad>"
 
 def preprocessData(raw_datas):
     ret_data = []
@@ -78,30 +103,31 @@ def preprocessTestData(raw_datas):
 
     return ret_data
 
-def embedding_filter(arr, vectors):
-    return 
-
-def morePreprocessData(processed_datas, vectors):
+def morePreprocessData(processed_datas, all_vocab, word2idx):
     ret_data = []
+    cou = 0
     for data in processed_datas:
+        stdout.write("\r{}".format(cou))
+        cou+=1
         records = data['records']
-        data['records'] = [ [i for i in record.split() if i in vectors.vocab] for record in records]
+        data['records'] = [ [word2idx.get(i, 1) for i in record.split()] for record in records]
         correct_answer = data['correct_answer']
-        data['correct_answer'] = [ [i for i in record.split() if i in vectors.vocab] for record in [correct_answer]][0]
+        data['correct_answer'] = [ [word2idx.get(i, 1) for i in record.split()] for record in [correct_answer]][0]
         wrong_answer = data['wrong_answer']
-        data['wrong_answer'] = [ [i for i in record.split() if i in vectors.vocab] for record in wrong_answer]
-
+        data['wrong_answer'] = [ [word2idx.get(i, 1) for i in record.split()] for record in wrong_answer]
         ret_data.append(data)
     return ret_data
 
-def morePreprocessTestData(processed_datas, vectors):
+def morePreprocessTestData(processed_datas, all_vocab, word2idx):
     ret_data = []
+    cou = 0
     for data in processed_datas:
+        stdout.write("\r{}".format(cou))
+        cou+=1
         records = data['records']
-        data['records'] = [ [i for i in record.split() if i in vectors.vocab] for record in records]
+        data['records'] = [ [word2idx.get(i, 1) for i in record.split()] for record in records]
         wrong_answer = data['wrong_answer']
-        data['wrong_answer'] = [ [i for i in record.split() if i in vectors.vocab] for record in wrong_answer]
-
+        data['wrong_answer'] = [ [word2idx.get(i, 1) for i in record.split()] for record in wrong_answer]
         ret_data.append(data)
     return ret_data
 
@@ -119,16 +145,30 @@ def main():
     valid_data = preprocessData(valid_raw)
     test_data = preprocessTestData(test_raw)
 
-    print("building word model ...")
-    word_model = Word2Vec(all_sentence, size=1000, window=5, min_count=5, workers=16)
-    word_model.save("Word2Vec_V2.h5")
-    word_model = Word2Vec.load("Word2Vec_V2.h5")
-    vectors = word_model.wv
+    word_set = set([])
+    for sentence in all_sentence:
+        word_set |= set(sentence)
 
-    print("more processing data ...")
-    train_data = morePreprocessData(train_data, vectors)
-    valid_data = morePreprocessData(valid_data, vectors)
-    test_data = morePreprocessTestData(test_data, vectors)
+    print(len(list(word_set)))
+    print("loading pre-trained model ...")
+    word2idx, vectors = load_vectors("./crawl-300d-2M.vec", word_set)
+
+    with open(os.path.join(data_path, "dict&vectors.pkl"), "wb") as f:
+        pickle.dump([word2idx, vectors], f)
+
+    ## Gensim ##
+    # print("building word model ...")
+    # word_model = Word2Vec(all_sentence, size=1000, window=5, min_count=5, workers=16)
+    # word_model.save("Word2Vec_V2.h5")
+    # word_model = Word2Vec.load("Word2Vec_V2.h5")
+    # vectors = word_model.wv
+    ## Gensim ##
+
+    print("more processing data ... (Clean the OOV)")
+    train_data = morePreprocessData(train_data, word_set, word2idx)
+    valid_data = morePreprocessData(valid_data, word_set, word2idx)
+    test_data = morePreprocessTestData(test_data, word_set, word2idx)
+
 
     with open(os.path.join(data_path, "train.pkl"), "wb") as f:
         pickle.dump(train_data, f)
@@ -136,8 +176,6 @@ def main():
         pickle.dump(valid_data, f)
     with open(os.path.join(data_path, "test.pkl"), "wb") as f:
         pickle.dump(test_data, f)
-
-    embed()
 
 if __name__ == '__main__':
     main()
