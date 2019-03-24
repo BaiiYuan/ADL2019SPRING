@@ -31,7 +31,7 @@ class RNNbase(nn.Module):
         # self.lstm1_rep = nn.LSTM(self.embedding_size, self.hidden_size, batch_first=True, bidirectional=True)
 
 
-        self.weight = nn.Linear(self.hidden_size*2, self.hidden_size*2)
+        self.weight = nn.Linear(self.hidden_size*2*2, self.hidden_size*2*2)
 
     def forward(self, input_data_rec, input_data_rep):
         batch_size = input_data_rec.shape[0]
@@ -72,7 +72,7 @@ class RNNbase(nn.Module):
         return pred
 
 class RNNatt(nn.Module):
-    def __init__(self, input_size=300, classes=1, embedding_size=512, hidden_size=256, rec_len=112, rep_len=16, window_size=128, drop_p=0.2, num_of_words=80000):
+    def __init__(self, input_size=300, classes=1, embedding_size=512, hidden_size=256, rec_len=112, rep_len=16, window_size=128, drop_p=0.3, num_of_words=80000):
         super(RNNatt, self).__init__()
 
         self.input_size = input_size
@@ -98,7 +98,7 @@ class RNNatt(nn.Module):
         # self.gru3_rep = nn.GRU(self.hidden_size*2, self.hidden_size, batch_first=True, bidirectional=True)
 
 
-        self.weight1 = nn.Linear(self.hidden_size*2*2, self.hidden_size*2*2)
+        self.weight1 = nn.Linear(self.hidden_size*2*3, self.hidden_size*2*3)
         # self.weight2 = nn.Linear(self.hidden_size*2, self.hidden_size*2)
 
 
@@ -137,12 +137,12 @@ class RNNatt(nn.Module):
         last_rec = rnn_output2_rec[:,-1]
         mean_rec = rnn_output2_rec.mean(dim=1)
         max_rec = rnn_output2_rec.max(dim=1)[0]
-        output_rec = torch.cat((mean_rec, last_rec), dim=1)
+        output_rec = torch.cat((mean_rec, max_rec, last_rec), dim=1)
 
         last_rep = rnn_output2_rep[:,-1]
         mean_rep = rnn_output2_rep.mean(dim=1)
         max_rep = rnn_output2_rep.max(dim=1)[0]
-        output_rep = torch.cat((mean_rep, last_rep), dim=1)
+        output_rep = torch.cat((mean_rep, max_rep, last_rep), dim=1)
 
         # inner product batch-wise
         output_rec = self.dropout(self.weight1(output_rec))
