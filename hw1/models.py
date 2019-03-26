@@ -6,7 +6,7 @@ from IPython import embed
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 class RNNbase(nn.Module):
-    def __init__(self, input_size=300, classes=1, hidden_size=32, window_size=128, drop_p=0.2, num_of_words=80000):
+    def __init__(self, input_size=300, classes=1, hidden_size=32, window_size=128, drop_p=0.3, num_of_words=80000):
         super(RNNbase, self).__init__()
 
         self.input_size = input_size

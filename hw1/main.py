@@ -256,7 +256,7 @@ def create_model(args):
                             )
     else:
         model = models.RNNbase(window_size=args.max_length,
-                               hidden_size=512,
+                               hidden_size=256,
                                num_of_words=len(word2idx)
                             )
 

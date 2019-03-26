@@ -8,6 +8,7 @@ import pickle
 from gensim.models import Word2Vec
 from IPython import embed
 from sys import stdout
+import nltk
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
@@ -26,8 +27,6 @@ def load_vectors(fname, word_set):
     for line in fin:
         tokens = line.rstrip().split(' ')
         if tokens[0] in word_set:
-            if tokens[0] == "<s>":
-                embed()
             word2idx[tokens[0]] = cou
             cou += 1
             stdout.write("\r{}".format(cou))
@@ -40,12 +39,15 @@ def load_vectors(fname, word_set):
     return word2idx, vectors
 
 def preprocessSentence(raw_sentence):
-    a = re.sub(r"([!?])", r" \1 ", raw_sentence)
-    a = re.sub(r"[^a-zA-Z!?]+", r" ", a)
+    a = raw_sentence
+    # a = re.sub(r"([!?])", r" \1 ", a)
+    a = re.sub(r"[^a-zA-Z!?',.]+", r" ", a)
     a = re.sub(r"\s+", r" ", a).strip()
-    a = a.lower()
+    # a = a.lower()
+    a = nltk.word_tokenize(a)
     # print(raw_sentence);print(a);print("----")
-    return a +" <pad>"
+    a.append("<pad>")
+    return a
 
 def preprocessData(raw_datas):
     ret_data = []
@@ -73,9 +75,9 @@ def preprocessData(raw_datas):
         tmp['correct_answer'] = correct_answer
 
         ret_data.append(tmp)
-        all_sentence.extend([i.split() for i in tmp['records']])
-        all_sentence.extend([i.split() for i in [tmp['correct_answer']]])
-        all_sentence.extend([i.split() for i in tmp['wrong_answer']])
+        all_sentence.extend([i for i in tmp['records']])
+        all_sentence.extend([i for i in [tmp['correct_answer']]])
+        all_sentence.extend([i for i in tmp['wrong_answer']])
         assert(len(tmp['wrong_answer'])==99)
 
     return ret_data
@@ -97,8 +99,8 @@ def preprocessTestData(raw_datas):
         tmp['wrong_answer'] = wrong_answer
 
         ret_data.append(tmp)
-        all_sentence.extend([i.split() for i in tmp['records']])
-        all_sentence.extend([i.split() for i in tmp['wrong_answer']])
+        all_sentence.extend([i for i in tmp['records']])
+        all_sentence.extend([i for i in tmp['wrong_answer']])
         assert(len(tmp['wrong_answer'])==100)
 
     return ret_data
@@ -110,12 +112,13 @@ def morePreprocessData(processed_datas, all_vocab, word2idx):
         stdout.write("\r{}".format(cou))
         cou+=1
         records = data['records']
-        data['records'] = [ [word2idx.get(i, 1) for i in record.split()] for record in records]
+        data['records'] = [ [word2idx.get(i, 1) for i in record] for record in records]
         correct_answer = data['correct_answer']
-        data['correct_answer'] = [ [word2idx.get(i, 1) for i in record.split()] for record in [correct_answer]][0]
+        data['correct_answer'] = [ [word2idx.get(i, 1) for i in record] for record in [correct_answer]][0]
         wrong_answer = data['wrong_answer']
-        data['wrong_answer'] = [ [word2idx.get(i, 1) for i in record.split()] for record in wrong_answer]
+        data['wrong_answer'] = [ [word2idx.get(i, 1) for i in record] for record in wrong_answer]
         ret_data.append(data)
+    print(" ")
     return ret_data
 
 def morePreprocessTestData(processed_datas, all_vocab, word2idx):
@@ -125,10 +128,11 @@ def morePreprocessTestData(processed_datas, all_vocab, word2idx):
         stdout.write("\r{}".format(cou))
         cou+=1
         records = data['records']
-        data['records'] = [ [word2idx.get(i, 1) for i in record.split()] for record in records]
+        data['records'] = [ [word2idx.get(i, 1) for i in record] for record in records]
         wrong_answer = data['wrong_answer']
-        data['wrong_answer'] = [ [word2idx.get(i, 1) for i in record.split()] for record in wrong_answer]
+        data['wrong_answer'] = [ [word2idx.get(i, 1) for i in record] for record in wrong_answer]
         ret_data.append(data)
+    print(" ")
     return ret_data
 
 def main():
@@ -148,6 +152,7 @@ def main():
     word_set = set([])
     for sentence in all_sentence:
         word_set |= set(sentence)
+
 
     print(len(list(word_set)))
     print("loading pre-trained model ...")
