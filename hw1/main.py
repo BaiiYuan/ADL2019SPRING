@@ -21,7 +21,7 @@ from tqdm import tqdm
 
 rec_len = 112
 rep_len = 16
-neg_nums = 3
+neg_nums = 4
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 
@@ -249,16 +249,14 @@ def create_model(args):
     global model
     if args.attn:
         model = models.RNNatt(window_size=args.max_length,
-                              embedding_size=512,
-                              hidden_size=256,
+                              hidden_size=128,
                               num_of_words=len(word2idx),
                               rec_len=rec_len,
                               rep_len=rep_len
                             )
     else:
         model = models.RNNbase(window_size=args.max_length,
-                               embedding_size=512,
-                               hidden_size=256,
+                               hidden_size=512,
                                num_of_words=len(word2idx)
                             )
 
