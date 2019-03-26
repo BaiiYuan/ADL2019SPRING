@@ -261,7 +261,7 @@ def create_model(args):
                             )
 
 
-    model.word_embedding.load_state_dict({'weight': vectors})
+    model.word_embedding.load_state_dict({'weight': vectors.to(torch.float32)})
     model.word_embedding.weight.requires_grad = False
 
     model = model.to(device)
