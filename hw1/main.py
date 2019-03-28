@@ -19,9 +19,10 @@ from collections import Counter
 from gensim.models import Word2Vec
 from tqdm import tqdm
 
-rec_len = 112
-rep_len = 16
-neg_nums = 4
+rep_len = 15
+rec_len = 60
+tolerence = 2
+RATE = 4
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 
@@ -38,28 +39,83 @@ def tokenize(max_length, arr, word2idx, rec=True):
     assert(len(arr)==max_length)
     return arr
 
-def random_sample(dataset, args, word2idx, rate=neg_nums):
+def flatten2D(List2D):
+     return [item for sublist in List2D for item in sublist]
+
+def addiitonal_Data_Generate(records, word2idx):
+    add = []
+    for i in range(len(records)-1, 2, -1):
+        if(len(records[i]) >= rep_len-tolerence):
+            tmp_rec = flatten2D(records[:i-1])
+            tmp_rep = records[i]
+            if len(tmp_rec) < rec_len-tolerence:
+                break
+            tmp_rec = tokenize(rec_len, tmp_rec, word2idx)
+            tmp_rep = tokenize(rep_len, tmp_rep, word2idx, rec=False)
+
+            add.append([tmp_rec, tmp_rep, 1])
+    return add
+
+def random_sample(dataset, args, word2idx, vectors, rate=RATE): # 1e5
+    addiitonal = []
     for cou in range(len(dataset)):
         records = dataset[cou]['records']
-        dataset[cou]['records'] = [item for sublist in records for item in sublist]
+    #     addiitonal.extend(addiitonal_Data_Generate(records, word2idx))
+        dataset[cou]['records'] = flatten2D(records)
+
+    vectors = vectors.numpy()
     out = []
-    for i in dataset:
-        records = i['records']
-        records = tokenize(rec_len, records, word2idx)
+
+    for cou, i in enumerate(dataset):
+        stdout.write(f"\r{cou}")
+        wa = i['wrong_answer']
         ca = i['correct_answer']
+        records = i['records']
+
+        ca_mean = np.array([vectors[i] for i in ca]).mean(axis=0)
+        record_mean = np.array([vectors[i] for i in records]).mean(axis=0)
+
         ca = tokenize(rep_len, ca, word2idx, rec=False)
+        records = tokenize(rec_len, records, word2idx)
+
         out.append([records, ca, 1])
 
-        wa = i['wrong_answer']
+        # # Special Sampling
+        # if special_sample_exist:
+        #     wa_spe = [wa[i] for Id in special_sample[cou]]
+
+        # else:
+        #     score = []
+        #     for item in wa:
+        #         item_mean = np.array([vectors[i] for i in item]).mean(axis=0)
+        #         score.append(record_mean.dot(item_mean))
+
+        #     ca_socre = record_mean.dot(ca_mean)
+        #     wa_spe = [wa[i] for i in range(99) if score[i] > ca_socre]
+
+        #     while (len(wa_spe) < 4):
+        #         print("in")
+        #         ca_socre*= 0.9
+        #         wa_spe = [wa[i] for i in range(99) if score[i] > ca_socre]
+
+        #     tmp = [i for i in range(99) if score[i] > ca_socre]
+        #     special_sample.append(tmp)
+        # # Special Sampling
+
         wa_sam = random.sample(wa, rate)
+
         for item in wa_sam:
             item = tokenize(rep_len, item, word2idx, rec=False)
             out.append([records, item, 0])
-    return out
+
+    # if not special_sample_exist:
+    #     np.save(os.path.join(args.data_path, "special_sample.npy"), special_sample)
+    return out, addiitonal
 
 def process_valid_data(data_dict, word2idx):
-    out = []
+    out, addiitonal = [], []
     records = data_dict['records']
+    addiitonal.extend(addiitonal_Data_Generate(records, word2idx))
     records = [item for sublist in records for item in sublist]
     records = tokenize(rec_len, records, word2idx)
 
@@ -71,7 +127,7 @@ def process_valid_data(data_dict, word2idx):
     for item in wa:
         item = tokenize(rep_len, item, word2idx, rec=False)
         out.append([records, item])
-    return out
+    return out, addiitonal
 
 
 def process_test_data(data_dict, word2idx):
@@ -87,24 +143,38 @@ def process_test_data(data_dict, word2idx):
     return out
 
 
-def load_data(args, word2idx):
+def load_data(args, word2idx, vectors):
+    pos_num, neg_num = 1e5, 1e5*RATE
     print("> Load prepro-data...")
     dataset = {}
 
-    with open(os.path.join(args.data_path, "train.pkl"), "rb") as f:
-        train_data = pickle.load(f)
-    dataset['train'] = random_sample(train_data, args, word2idx)
-    print("> Training data finish")
-
     with open(os.path.join(args.data_path, "valid.pkl"), "rb") as f:
         valid_data = pickle.load(f)
-    tmp = []
+
+    tmp, add_data = [], []
     for item in valid_data:
-        tmp.append(process_valid_data(item, word2idx))
+        valid_out, addiitonal = process_valid_data(item, word2idx)
+        tmp.append(valid_out)
+        add_data.extend(addiitonal)
+        pos_num += len(addiitonal)
     dataset['valid'] = tmp
     print("> Validation data finish")
+    print(pos_num, neg_num)
 
-    return dataset
+
+    with open(os.path.join(args.data_path, "train.pkl"), "rb") as f:
+        train_data = pickle.load(f)
+
+    dataset['train'], addiitonal = random_sample(train_data, args, word2idx, vectors)
+    add_data.extend(addiitonal)
+    pos_num += len(addiitonal)
+
+    # dataset['train'] += add_data
+
+    print("> Training data finish")
+    print(pos_num, neg_num)
+    print(len(dataset['train']))
+    return dataset, pos_num, neg_num
 
 def load_test_data(args, word2idx):
     print("> Load prepro-data...")
@@ -120,7 +190,7 @@ def load_test_data(args, word2idx):
 
 def calculateRecall(dataset, at=10):
     datas = dataset['valid']
-    model.eval()
+    # model.eval()
     recall10, recall5 = [], []
     print("> Calculating Recall ...")
     for data in datas:
@@ -132,6 +202,8 @@ def calculateRecall(dataset, at=10):
         input_data_rep = input_data_rep.to(device)
 
         pred = model(input_data_rec, input_data_rep)
+        if args.attn:
+            pred = pred[0]
         pred = nn.Sigmoid()(pred)
         out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
         if 0 in out:    recall10.append(1)
@@ -167,19 +239,22 @@ def data_generator(args, data, batch_size_origin, shuffle=True):
         yield input_data_rec.to(device), input_data_rep.to(device), labels.to(device)
 
 def old_train(args, epoch, dataset, objective):
-    # TODO: prepare training data and validation
+    print("------------------------------------------")
     gen = data_generator(args, dataset['train'], args.batch_size, shuffle=True)  # generate train data
 
     t1 = time.time()
     epoch_loss = []
     epoch_acc = []
-    model.train(True)
+    # model.train(True)
 
     for  idx, (input_data_rec, input_data_rep, labels) in enumerate(gen):
         # Forward and backward.
         optimizer.zero_grad()
         # embed()
+
         pred = model(input_data_rec, input_data_rep)
+        if args.attn:
+            pred = pred[0]
         loss = objective(pred, labels)
 
         loss.backward()
@@ -202,18 +277,18 @@ def old_train(args, epoch, dataset, objective):
         if (idx + 1) % args.print_iter == 0 :
             print(" ")
 
-    print("> Spends {:.2f} seconds.".format(time.time() - t1))
+    print("\n> Spends {:.2f} seconds.".format(time.time() - t1))
     print("> The Training dataset Accuracy is {:.2f}%, Loss is {:.4f}".format(np.mean(epoch_acc)*100,
                                                                               np.mean(epoch_loss)))
 
 def trainInit(args):
     max_recall = 0
-    word2idx = create_model(args)
+    word2idx, vectors = create_model(args)
     if args.model_load != None:
         print("> Loading trained model and Train")
         max_recall = load_model(args.model_load)
-    objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([neg_nums])).to(device)
-    dataset = load_data(args, word2idx)
+    dataset, pos_num, neg_num = load_data(args, word2idx, vectors)
+    objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([RATE])).to(device)
     return dataset, objective, word2idx, max_recall
 
 def trainIter(args):
@@ -225,7 +300,8 @@ def trainIter(args):
         #     dataset = load_data(args, word2idx)
 
         old_train(args, epoch+1, dataset, objective)
-        score10, score5 = calculateRecall(dataset)
+        with torch.no_grad():
+            score10, score5 = calculateRecall(dataset)
         print(f"> Validation Recall10: {score10} and Recall5: {score5}")
 
         if score10 > max_recall:
@@ -248,15 +324,28 @@ def create_model(args):
 
     global model
     if args.attn:
-        model = models.RNNatt(window_size=args.max_length,
-                              hidden_size=128,
-                              num_of_words=len(word2idx),
-                              rec_len=rec_len,
-                              rep_len=rep_len
-                            )
+        hidden = 128
+        # model = models.RNNatt(window_size=args.max_length,
+        #                       hidden_size=128,
+        #                       drop_p=0.2,
+        #                       num_of_words=len(word2idx),
+        #                       rec_len=rec_len,
+        #                       rep_len=rep_len
+        #                     )
+        encoder1 = models.Encoder(hidden_size=hidden, nlayers=1)
+        encoder2 = models.Encoder(input_size=hidden*2, hidden_size=hidden, nlayers=1)
+        attention_dim = hidden
+        attention = models.Attention(attention_dim, attention_dim, attention_dim)
+        model = models.Classifier(encoder1, encoder2, attention, attention_dim, 1,
+                                  rec_len=rec_len,
+                                  rep_len=rep_len,
+                                  num_of_words=len(word2idx))
+
+
     else:
         model = models.RNNbase(window_size=args.max_length,
-                               hidden_size=256,
+                               hidden_size=512,
+                               drop_p=0.4,
                                num_of_words=len(word2idx)
                             )
 
@@ -271,10 +360,10 @@ def create_model(args):
     optimizer = optim.Adam(model.parameters(),
                            lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
 
-    return word2idx
+    return word2idx, vectors
 
 def save_model(args, epoch, max_recall):
-    print("Saving Model...")
+    print(">> Saving Model...")
     torch.save({
         'epoch': epoch,
         'model': model.state_dict(),
@@ -296,7 +385,8 @@ def testAll(args):
     max_recall = load_model(args.model_dump)
     print(f"max_recall: {max_recall}")
     test_data = load_test_data(args, word2idx)
-    do_predict(args, test_data)
+    with torch.no_grad():
+        do_predict(args, test_data)
 
 def do_predict(args, test_data):
     write = []
@@ -309,6 +399,8 @@ def do_predict(args, test_data):
         input_data_rep = input_data_rep.to(device)
 
         pred = model(input_data_rec, input_data_rep)
+        if args.attn:
+            pred = pred[0]
         pred = nn.Sigmoid()(pred)
         out = pred.detach().cpu().numpy().argsort()[::-1].tolist()[:10]
         out = "".join(["1-" if i in out else "0-" for i in range(100)])
@@ -335,6 +427,7 @@ def main(args):
 
 if __name__ == '__main__':
     print(device)
+    print(rec_len, rep_len)
     parser = argparse.ArgumentParser()
     parser.add_argument('-dp', '--data_path', type=str, default='./data')
     parser.add_argument('-e', '--epochs', type=int, default=30)

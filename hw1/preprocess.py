@@ -43,7 +43,7 @@ def preprocessSentence(raw_sentence):
     # a = re.sub(r"([!?])", r" \1 ", a)
     a = re.sub(r"[^a-zA-Z!?',.]+", r" ", a)
     a = re.sub(r"\s+", r" ", a).strip()
-    # a = a.lower()
+    a = a.lower()
     a = nltk.word_tokenize(a)
     # print(raw_sentence);print(a);print("----")
     a.append("<pad>")
@@ -51,7 +51,10 @@ def preprocessSentence(raw_sentence):
 
 def preprocessData(raw_datas):
     ret_data = []
+    cou = 0
     for data in raw_datas:
+        stdout.write("\r{}".format(cou))
+        cou+=1
         tmp = {}
         ans = data['options-for-correct-answers'][0]
         ansID = ans['candidate-id']
@@ -79,12 +82,15 @@ def preprocessData(raw_datas):
         all_sentence.extend([i for i in [tmp['correct_answer']]])
         all_sentence.extend([i for i in tmp['wrong_answer']])
         assert(len(tmp['wrong_answer'])==99)
-
+    print(" ")
     return ret_data
 
 def preprocessTestData(raw_datas):
     ret_data = []
+    cou = 0
     for data in raw_datas:
+        stdout.write("\r{}".format(cou))
+        cou+=1
         tmp = {}
         records = data['messages-so-far']
         options = data['options-for-next']
@@ -102,7 +108,7 @@ def preprocessTestData(raw_datas):
         all_sentence.extend([i for i in tmp['records']])
         all_sentence.extend([i for i in tmp['wrong_answer']])
         assert(len(tmp['wrong_answer'])==100)
-
+    print(" ")
     return ret_data
 
 def morePreprocessData(processed_datas, all_vocab, word2idx):
