@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils import data
 
 import os
-import sys
 import time
 import random
 import pickle
@@ -15,178 +13,17 @@ import pandas as pd
 import models
 from sys import stdout
 from IPython import embed
-from collections import Counter
-from gensim.models import Word2Vec
+# from collections import Counter
+# from gensim.models import Word2Vec
 from tqdm import tqdm
 
-rep_len = 15
-rec_len = 60
-tolerence = 2
+from load import load_data, load_test_data
+
+rep_len = 200
+rec_len = 200
 RATE = 4
 
 device = "cuda" if torch.cuda.is_available else "cpu"
-
-Draw = []
-
-def tokenize(max_length, arr, word2idx, rec=True):
-    if len(arr) > max_length:
-        if rec:
-            arr = arr[-max_length:]
-        else:
-            arr = arr[:max_length]
-    if len(arr) < max_length:
-        arr = arr + [0 for _ in range(max_length-len(arr))]
-    assert(len(arr)==max_length)
-    return arr
-
-def flatten2D(List2D):
-     return [item for sublist in List2D for item in sublist]
-
-def addiitonal_Data_Generate(records, word2idx):
-    add = []
-    for i in range(len(records)-1, 2, -1):
-        if(len(records[i]) >= rep_len-tolerence):
-            tmp_rec = flatten2D(records[:i-1])
-            tmp_rep = records[i]
-            if len(tmp_rec) < rec_len-tolerence:
-                break
-            tmp_rec = tokenize(rec_len, tmp_rec, word2idx)
-            tmp_rep = tokenize(rep_len, tmp_rep, word2idx, rec=False)
-
-            add.append([tmp_rec, tmp_rep, 1])
-    return add
-
-def random_sample(dataset, args, word2idx, vectors, rate=RATE): # 1e5
-    addiitonal = []
-    for cou in range(len(dataset)):
-        records = dataset[cou]['records']
-    #     addiitonal.extend(addiitonal_Data_Generate(records, word2idx))
-        dataset[cou]['records'] = flatten2D(records)
-
-    vectors = vectors.numpy()
-    out = []
-
-    for cou, i in enumerate(dataset):
-        stdout.write(f"\r{cou}")
-        wa = i['wrong_answer']
-        ca = i['correct_answer']
-        records = i['records']
-
-        ca_mean = np.array([vectors[i] for i in ca]).mean(axis=0)
-        record_mean = np.array([vectors[i] for i in records]).mean(axis=0)
-
-        ca = tokenize(rep_len, ca, word2idx, rec=False)
-        records = tokenize(rec_len, records, word2idx)
-
-        out.append([records, ca, 1])
-
-        # # Special Sampling
-        # if special_sample_exist:
-        #     wa_spe = [wa[i] for Id in special_sample[cou]]
-
-        # else:
-        #     score = []
-        #     for item in wa:
-        #         item_mean = np.array([vectors[i] for i in item]).mean(axis=0)
-        #         score.append(record_mean.dot(item_mean))
-
-        #     ca_socre = record_mean.dot(ca_mean)
-        #     wa_spe = [wa[i] for i in range(99) if score[i] > ca_socre]
-
-        #     while (len(wa_spe) < 4):
-        #         print("in")
-        #         ca_socre*= 0.9
-        #         wa_spe = [wa[i] for i in range(99) if score[i] > ca_socre]
-
-        #     tmp = [i for i in range(99) if score[i] > ca_socre]
-        #     special_sample.append(tmp)
-        # # Special Sampling
-
-        wa_sam = random.sample(wa, rate)
-
-        for item in wa_sam:
-            item = tokenize(rep_len, item, word2idx, rec=False)
-            out.append([records, item, 0])
-
-    # if not special_sample_exist:
-    #     np.save(os.path.join(args.data_path, "special_sample.npy"), special_sample)
-    return out, addiitonal
-
-def process_valid_data(data_dict, word2idx):
-    out, addiitonal = [], []
-    records = data_dict['records']
-    addiitonal.extend(addiitonal_Data_Generate(records, word2idx))
-    records = [item for sublist in records for item in sublist]
-    records = tokenize(rec_len, records, word2idx)
-
-    ca = data_dict['correct_answer']
-    ca = tokenize(rep_len, ca, word2idx, rec=False)
-    out.append([records, ca])
-
-    wa = data_dict['wrong_answer']
-    for item in wa:
-        item = tokenize(rep_len, item, word2idx, rec=False)
-        out.append([records, item])
-    return out, addiitonal
-
-
-def process_test_data(data_dict, word2idx):
-    out = []
-    records = data_dict['records']
-    records = [item for sublist in records for item in sublist]
-    records = tokenize(rec_len, records, word2idx)
-
-    wa = data_dict['wrong_answer']
-    for item in wa:
-        item = tokenize(rep_len, item, word2idx)
-        out.append([records, item])
-    return out
-
-
-def load_data(args, word2idx, vectors):
-    pos_num, neg_num = 1e5, 1e5*RATE
-    print("> Load prepro-data...")
-    dataset = {}
-
-    with open(os.path.join(args.data_path, "valid.pkl"), "rb") as f:
-        valid_data = pickle.load(f)
-
-    tmp, add_data = [], []
-    for item in valid_data:
-        valid_out, addiitonal = process_valid_data(item, word2idx)
-        tmp.append(valid_out)
-        add_data.extend(addiitonal)
-        pos_num += len(addiitonal)
-    dataset['valid'] = tmp
-    print("> Validation data finish")
-    print(pos_num, neg_num)
-
-
-    with open(os.path.join(args.data_path, "train.pkl"), "rb") as f:
-        train_data = pickle.load(f)
-
-    dataset['train'], addiitonal = random_sample(train_data, args, word2idx, vectors)
-    add_data.extend(addiitonal)
-    pos_num += len(addiitonal)
-
-    # dataset['train'] += add_data
-
-    print("> Training data finish")
-    print(pos_num, neg_num)
-    print(len(dataset['train']))
-    return dataset, pos_num, neg_num
-
-def load_test_data(args, word2idx):
-    print("> Load prepro-data...")
-
-    with open(os.path.join(args.data_path, "test.pkl"), "rb") as f:
-        valid_data = pickle.load(f)
-    test_data = []
-    for item in valid_data:
-        test_data.append(process_test_data(item, word2idx))
-    print("> Testing data finish")
-
-    return test_data
 
 def calculateRecall(dataset, at=10):
     datas = dataset['valid']
@@ -202,14 +39,16 @@ def calculateRecall(dataset, at=10):
         input_data_rep = input_data_rep.to(device)
 
         pred = model(input_data_rec, input_data_rep)
-        if args.attn:
+        if args.attn == 1:
             pred = pred[0]
         pred = nn.Sigmoid()(pred)
         out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
+
         if 0 in out:    recall10.append(1)
         else:           recall10.append(0)
         if 0 in out[:5]:    recall5.append(1)
         else:               recall5.append(0)
+
     return np.mean(recall10), np.mean(recall5)
 
 
@@ -253,7 +92,7 @@ def old_train(args, epoch, dataset, objective):
         # embed()
 
         pred = model(input_data_rec, input_data_rep)
-        if args.attn:
+        if args.attn == 1:
             pred = pred[0]
         loss = objective(pred, labels)
 
@@ -287,7 +126,7 @@ def trainInit(args):
     if args.model_load != None:
         print("> Loading trained model and Train")
         max_recall = load_model(args.model_load)
-    dataset, pos_num, neg_num = load_data(args, word2idx, vectors)
+    dataset = load_data(args, word2idx, vectors)
     objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([RATE])).to(device)
     return dataset, objective, word2idx, max_recall
 
@@ -301,7 +140,10 @@ def trainIter(args):
 
         old_train(args, epoch+1, dataset, objective)
         with torch.no_grad():
+            model.eval()
             score10, score5 = calculateRecall(dataset)
+            model.train(True)
+
         print(f"> Validation Recall10: {score10} and Recall5: {score5}")
 
         if score10 > max_recall:
@@ -323,8 +165,8 @@ def create_model(args):
         [word2idx, vectors] = pickle.load(f)
 
     global model
-    if args.attn:
-        hidden = 128
+    if args.attn == 1:
+        hidden = args.hidden_size
         # model = models.RNNatt(window_size=args.max_length,
         #                       hidden_size=128,
         #                       drop_p=0.2,
@@ -333,19 +175,28 @@ def create_model(args):
         #                       rep_len=rep_len
         #                     )
         encoder1 = models.Encoder(hidden_size=hidden, nlayers=1)
-        encoder2 = models.Encoder(input_size=hidden*2, hidden_size=hidden, nlayers=1)
-        attention_dim = hidden
+        encoder2 = models.Encoder(input_size=hidden*2*4, hidden_size=hidden, nlayers=1)
+
+        attention_dim = 128
         attention = models.Attention(attention_dim, attention_dim, attention_dim)
-        model = models.Classifier(encoder1, encoder2, attention, attention_dim, 1,
+
+        model = models.Classifier(encoder1, encoder2, attention,
+                                  hidden_size=hidden,
                                   rec_len=rec_len,
                                   rep_len=rep_len,
-                                  num_of_words=len(word2idx))
+                                  num_of_words=len(word2idx),
+                                  drop_p=args.drop_p)
 
-
+    elif args.attn == 2:
+        model = models.BiDAF(window_size=args.max_length,
+                             hidden_size=args.hidden_size,
+                             drop_p=args.drop_p,
+                             num_of_words=len(word2idx)
+                            )
     else:
         model = models.RNNbase(window_size=args.max_length,
-                               hidden_size=512,
-                               drop_p=0.4,
+                               hidden_size=args.hidden_size,
+                               drop_p=args.drop_p,
                                num_of_words=len(word2idx)
                             )
 
@@ -378,20 +229,21 @@ def load_model(ckptname):
     optimizer.load_state_dict(ckpt['opt'])
     return ckpt['max_recall']
 
-
 def testAll(args):
-    word2idx = create_model(args)
+    word2idx, vectors = create_model(args)
     print("> Loading trained model and Test")
     max_recall = load_model(args.model_dump)
     print(f"max_recall: {max_recall}")
     test_data = load_test_data(args, word2idx)
     with torch.no_grad():
+        model.eval()
         do_predict(args, test_data)
 
 def do_predict(args, test_data):
     write = []
     for cou, data in enumerate(test_data):
         input_data_rec, input_data_rep = zip(*data)
+
         input_data_rec = torch.tensor(input_data_rec, dtype=torch.long)
         input_data_rep = torch.tensor(input_data_rep, dtype=torch.long)
 
@@ -399,10 +251,12 @@ def do_predict(args, test_data):
         input_data_rep = input_data_rep.to(device)
 
         pred = model(input_data_rec, input_data_rep)
-        if args.attn:
+        if args.attn == 1:
             pred = pred[0]
-        pred = nn.Sigmoid()(pred)
+        pred1 = nn.Sigmoid()(pred)
         out = pred.detach().cpu().numpy().argsort()[::-1].tolist()[:10]
+        out1 = pred1.detach().cpu().numpy().argsort()[::-1].tolist()[:10]
+
         out = "".join(["1-" if i in out else "0-" for i in range(100)])
         write.append((cou+9000001, out))
 
@@ -432,7 +286,9 @@ if __name__ == '__main__':
     parser.add_argument('-dp', '--data_path', type=str, default='./data')
     parser.add_argument('-e', '--epochs', type=int, default=30)
     parser.add_argument('-b', '--batch_size', type=int, default=100)
+    parser.add_argument('-hn', '--hidden_size', type=int, default=128)
     parser.add_argument('-lr', '--lr_rate', type=float, default=1e-4)
+    parser.add_argument('-dr', '--drop_p', type=float, default=0.2)
     parser.add_argument('-md', '--model_dump', type=str, default='./model.tar')
     parser.add_argument('-ml', '--model_load', type=str, default=None, help='Print every p iterations')
     parser.add_argument('-o', '--output_csv', type=str, default='./output.csv')

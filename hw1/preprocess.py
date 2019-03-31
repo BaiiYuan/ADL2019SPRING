@@ -21,8 +21,8 @@ all_words = []
 def load_vectors(fname, word_set):
     fin = io.open(fname, 'r', encoding='utf-8', newline='\n', errors='ignore')
     n, d = map(int, fin.readline().split())
-    cou = 2 # <unk> as 0
-    word2idx = {'<pad>': 0, '<unk>': 1}
+    cou = 1 # <unk> as 0
+    word2idx = {'<unk>': 0}
     vectors = []
     for line in fin:
         tokens = line.rstrip().split(' ')
@@ -33,20 +33,20 @@ def load_vectors(fname, word_set):
             vectors.append([float(v) for v in tokens[1:]])
     print(" ")
     vectors = torch.tensor(vectors)
+    # vectors = torch.cat([torch.zeros(1, 300), vectors], dim=0)
     vectors = torch.cat([torch.nn.init.uniform_(torch.empty(1, 300)), vectors], dim=0)
-    vectors = torch.cat([torch.zeros(1, 300), vectors], dim=0)
 
     return word2idx, vectors
 
 def preprocessSentence(raw_sentence):
     a = raw_sentence
     # a = re.sub(r"([!?])", r" \1 ", a)
-    a = re.sub(r"[^a-zA-Z!?',.]+", r" ", a)
-    a = re.sub(r"\s+", r" ", a).strip()
+    # a = re.sub(r"[^a-zA-Z!?',.]+", r" ", a)
+    # a = re.sub(r"\s+", r" ", a).strip()
     a = a.lower()
     a = nltk.word_tokenize(a)
     # print(raw_sentence);print(a);print("----")
-    a.append("<pad>")
+    # a.append("<pad>")
     return a
 
 def preprocessData(raw_datas):
