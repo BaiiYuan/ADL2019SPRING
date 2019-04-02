@@ -82,14 +82,13 @@ def old_train(args, epoch, dataset, objective):
     gen = data_generator(args, dataset['train'], args.batch_size, shuffle=True)  # generate train data
 
     t1 = time.time()
-    epoch_loss = []
-    epoch_acc = []
+    # epoch_loss = []
+    # epoch_acc = []
     # model.train(True)
 
     for  idx, (input_data_rec, input_data_rep, labels) in enumerate(gen):
         # Forward and backward.
         optimizer.zero_grad()
-        # embed()
 
         pred = model(input_data_rec, input_data_rep)
         if args.attn == 1:
@@ -123,11 +122,15 @@ def old_train(args, epoch, dataset, objective):
 def trainInit(args):
     max_recall = 0
     word2idx, vectors = create_model(args)
+    idx2word = {b:a for a,b in word2idx.items()}
+
     if args.model_load != None:
         print("> Loading trained model and Train")
         max_recall = load_model(args.model_load)
+
     dataset = load_data(args, word2idx, vectors)
     objective = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([RATE])).to(device)
+
     return dataset, objective, word2idx, max_recall
 
 def trainIter(args):
@@ -193,7 +196,7 @@ def create_model(args):
                              drop_p=args.drop_p,
                              num_of_words=len(word2idx)
                             )
-    else:
+    else: # args.attn == 0
         model = models.RNNbase(window_size=args.max_length,
                                hidden_size=args.hidden_size,
                                drop_p=args.drop_p,
@@ -265,15 +268,15 @@ def do_predict(args, test_data):
 
 def main(args):
     # init
-    global loss_epoch_tr
-    global acc_epoch_tr
-    global loss_epoch_va
-    global acc_epoch_va
+    # global loss_epoch_tr
+    # global acc_epoch_tr
+    # global loss_epoch_va
+    # global acc_epoch_va
 
-    loss_epoch_tr = []
-    acc_epoch_tr = []
-    loss_epoch_va = []
-    acc_epoch_va = []
+    # loss_epoch_tr = []
+    # acc_epoch_tr = []
+    # loss_epoch_va = []
+    # acc_epoch_va = []
 
     if args.train:
         trainIter(args)
