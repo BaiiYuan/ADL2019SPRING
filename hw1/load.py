@@ -5,9 +5,7 @@ import numpy as np
 from IPython import embed
 from sys import stdout
 
-rep_len = 200
-rec_len = 200
-RATE = 4
+from config import rep_len, rec_len, RATE
 
 def cut_to_length(max_length, arr, word2idx, rec=True):
     if len(arr) > max_length:

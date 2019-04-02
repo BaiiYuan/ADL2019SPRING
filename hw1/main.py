@@ -18,10 +18,9 @@ from IPython import embed
 from tqdm import tqdm
 
 from load import load_data, load_test_data
+from config import rep_len, rec_len, RATE
 
-rep_len = 200
-rec_len = 200
-RATE = 4
+
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 
@@ -82,8 +81,8 @@ def old_train(args, epoch, dataset, objective):
     gen = data_generator(args, dataset['train'], args.batch_size, shuffle=True)  # generate train data
 
     t1 = time.time()
-    # epoch_loss = []
-    # epoch_acc = []
+    epoch_loss = []
+    epoch_acc = []
     # model.train(True)
 
     for  idx, (input_data_rec, input_data_rep, labels) in enumerate(gen):
@@ -170,13 +169,6 @@ def create_model(args):
     global model
     if args.attn == 1:
         hidden = args.hidden_size
-        # model = models.RNNatt(window_size=args.max_length,
-        #                       hidden_size=128,
-        #                       drop_p=0.2,
-        #                       num_of_words=len(word2idx),
-        #                       rec_len=rec_len,
-        #                       rep_len=rep_len
-        #                     )
         encoder1 = models.Encoder(hidden_size=hidden, nlayers=1)
         encoder2 = models.Encoder(input_size=hidden*2*4, hidden_size=hidden, nlayers=1)
 
@@ -195,6 +187,14 @@ def create_model(args):
                              hidden_size=args.hidden_size,
                              drop_p=args.drop_p,
                              num_of_words=len(word2idx)
+                            )
+    elif args.attn == 3:
+        model = models.RNNatt(window_size=args.max_length,
+                              hidden_size=args.hidden_size,
+                              drop_p=args.drop_p,
+                              num_of_words=len(word2idx),
+                              rec_len=rec_len,
+                              rep_len=rep_len
                             )
     else: # args.attn == 0
         model = models.RNNbase(window_size=args.max_length,
