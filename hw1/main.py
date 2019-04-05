@@ -196,6 +196,14 @@ def create_model(args):
                               rec_len=rec_len,
                               rep_len=rep_len
                             )
+    elif args.attn == 4:
+        model = models.RNNatt_weight(window_size=args.max_length,
+                                     hidden_size=args.hidden_size,
+                                     drop_p=args.drop_p,
+                                     num_of_words=len(word2idx),
+                                     rec_len=rec_len,
+                                     rep_len=rep_len
+                                    )
     else: # args.attn == 0
         model = models.RNNbase(window_size=args.max_length,
                                hidden_size=args.hidden_size,

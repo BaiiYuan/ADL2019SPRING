@@ -18,8 +18,8 @@ path = "./"
 
 # results = np.array(tmp_results).sum(0)*3
 
-filenames = [f"BiDAF_200_200_128_D2_b_ver{i}.csv" for i in range(11)]
-filenames.append("BiDAF_200_200_512_D2_b.csv")
+filenames = [f"RNN_attn_self_ver{i}.csv" for i in [1, 2, 5, 10]]# range(11)]
+# filenames.append("BiDAF_200_200_512_D2_b.csv")
 
 tmp_results = []
 for filename in filenames:
@@ -41,4 +41,4 @@ for cou, item in enumerate(results):
     write.append((cou+9000001, out))
 
 df = pd.DataFrame(write, columns=['Id', 'Predict'])
-df.to_csv("ensemble2.csv", index=None)
+df.to_csv("ensemble_RNN_attn_self.csv", index=None)
