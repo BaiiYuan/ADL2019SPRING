@@ -1,7 +1,8 @@
 import os
+import sys
 import pandas as pd
 import numpy as np
-from IPython import embed
+# from IPython import embed
 
 path = "./"
 
@@ -18,7 +19,7 @@ path = "./"
 
 # results = np.array(tmp_results).sum(0)*3
 
-filenames = [f"RNN_attn_self_ver{i}.csv" for i in [1, 2, 5, 10]]# range(11)]
+filenames = [f"RNN_attn_self_ver{i}.csv" for i in range(11)] # [1,2,5,10]
 # filenames.append("BiDAF_200_200_512_D2_b.csv")
 
 tmp_results = []
@@ -41,4 +42,4 @@ for cou, item in enumerate(results):
     write.append((cou+9000001, out))
 
 df = pd.DataFrame(write, columns=['Id', 'Predict'])
-df.to_csv("ensemble_RNN_attn_self.csv", index=None)
+df.to_csv(sys.argv[1], index=None)

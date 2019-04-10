@@ -2,7 +2,6 @@ import os
 import random
 import pickle
 import numpy as np
-from IPython import embed
 from sys import stdout
 
 from config import rep_len, rec_len, RATE

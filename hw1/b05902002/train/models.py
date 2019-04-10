@@ -2,8 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from IPython import embed
+# from IPython import embed
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 
@@ -22,10 +21,6 @@ class RNNbase(nn.Module):
         self.dense_rep = nn.Linear(hidden_size*2*3, hidden_size)
 
         self.weight = nn.Linear(hidden_size, hidden_size, bias=False)
-        size = 0
-        for p in self.parameters():
-            size += p.nelement()
-        print('Total param size: {}'.format(size))
 
     def forward(self, input_data_rec, input_data_rep):
         batch_size = input_data_rec.shape[0]
@@ -35,10 +30,6 @@ class RNNbase(nn.Module):
 
         rnn_output1_rec, (hn_1_rec, cn_1_rec) = self.lstm1_rec(x_rec)
         rnn_output1_rep, (hn_1_rep, cn_1_rep) = self.lstm1_rec(x_rep)
-
-        # rnn_output1_rec = rnn_output1_rec.view(-1, batch_size, 2, self.hidden_size)
-        # hn_1_rec = hn_1_rec.view(self.num_layers, 2, batch_size, self.hidden_size)
-        # cn_1_rec = hn_1_rec.view(self.num_layers, 2, batch_size, self.hidden_size)
 
         last_rec = rnn_output1_rec[:,-1]
         mean_rec = rnn_output1_rec.mean(dim=1)
@@ -55,7 +46,7 @@ class RNNbase(nn.Module):
 
 
         # inner product batch-wise
-        output_rec = self.weight(self.dropout(output_rec))
+        output_rec = self.weight(output_rec)
         pred = torch.bmm(output_rec.view(batch_size, 1, -1), output_rep.view(batch_size, -1, 1))
         pred = pred.squeeze()
 
@@ -254,8 +245,8 @@ class RNNatt(nn.Module):
         x_rec = self.dropout(self.word_embedding(input_data_rec))
         x_rep = self.dropout(self.word_embedding(input_data_rep))
 
-        lstm_output1_rec, (hn_1_rec, cn_1_rec) = self.lstm1_rec(x_rec)
-        lstm_output1_rep, (hn_1_rep, cn_1_rep) = self.lstm1_rec(x_rep)
+        lstm_output1_rec, _ = self.lstm1_rec(x_rec)
+        lstm_output1_rep, _ = self.lstm1_rec(x_rep)
 
         raw_att2rep = F.softmax(torch.bmm(lstm_output1_rec, lstm_output1_rep.transpose(1,2)), dim=2)
         raw_att2rec = F.softmax(torch.bmm(lstm_output1_rep, lstm_output1_rec.transpose(1,2)), dim=2)
@@ -288,7 +279,7 @@ class RNNatt(nn.Module):
         pred = torch.bmm(output_rec.view(batch_size, 1, -1), output_rep.view(batch_size, -1, 1))
         pred = pred.squeeze()
 
-        return pred
+        return pred, (raw_att2rep, raw_att2rec)
 
 
 class RNNatt_weight(nn.Module):

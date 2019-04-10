@@ -38,10 +38,29 @@ def load_vectors(fname, word_set):
 
     return word2idx, vectors
 
+def load_vectors_gensim(fname, word_set):
+    model = gensim.models.KeyedVectors.load_word2vec_format('./GoogleNews-vectors-negative300.bin', binary=True)
+    all_word = list(model.index2word)
+    cou = 2 # <pad> as 0
+    word2idx = {'<pad>': 0, '<unk>': 1}
+    vectors = []
+    for line in all_word:
+        if line in word_set:
+            word2idx[line] = cou
+            cou += 1
+            stdout.write("\r{}".format(cou))
+            vectors.append(model.get_vector(line))
+    print(" ")
+    vectors = torch.tensor(vectors)
+    vectors = torch.cat([torch.nn.init.uniform_(torch.empty(1, 300)), vectors], dim=0)
+    vectors = torch.cat([torch.zeros(1, 300), vectors], dim=0)
+
+    return word2idx, vectors
+
 def preprocessSentence(raw_sentence):
     a = raw_sentence
-    # a = re.sub(r"([!?])", r" \1 ", a)
-    # a = re.sub(r"[^a-zA-Z!?',.]+", r" ", a)
+    # a = re.sub(r"([!?])", r" \1 ", raw_sentence)
+    a = re.sub(r"[^a-zA-Z!?',.]+", r" ", a)
     # a = re.sub(r"\s+", r" ", a).strip()
     a = a.lower()
     a = nltk.word_tokenize(a)
@@ -162,7 +181,8 @@ def main():
 
     print(len(list(word_set)))
     print("loading pre-trained model ...")
-    word2idx, vectors = load_vectors("./crawl-300d-2M.vec", word_set)
+    # word2idx, vectors = load_vectors("./crawl-300d-2M.vec", word_set)
+    word2idx, vectors = load_vectors_gensim("./GoogleNews-vectors-negative300.bin", word_set)
 
     with open(os.path.join(data_path, "dict&vectors.pkl"), "wb") as f:
         pickle.dump([word2idx, vectors], f)

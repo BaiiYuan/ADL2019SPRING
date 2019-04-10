@@ -12,7 +12,7 @@ import pandas as pd
 
 import models
 from sys import stdout
-from IPython import embed
+# from IPython import embed
 # from collections import Counter
 # from gensim.models import Word2Vec
 from tqdm import tqdm
@@ -20,8 +20,11 @@ from tqdm import tqdm
 from load import load_data, load_test_data
 from config import rep_len, rec_len, RATE
 
+# import matplotlib.pyplot as plt
+# plt.switch_backend('agg')
+# import matplotlib.ticker as ticker
 
-
+visualize = False
 device = "cuda" if torch.cuda.is_available else "cpu"
 
 def calculateRecall(dataset, at=10):
@@ -29,7 +32,7 @@ def calculateRecall(dataset, at=10):
     # model.eval()
     recall10, recall5 = [], []
     print("> Calculating Recall ...")
-    for data in datas:
+    for cou, data in enumerate(datas):
         input_data_rec, input_data_rep = zip(*data)
         input_data_rec = torch.tensor(input_data_rec, dtype=torch.long)
         input_data_rep = torch.tensor(input_data_rep, dtype=torch.long)
@@ -38,7 +41,20 @@ def calculateRecall(dataset, at=10):
         input_data_rep = input_data_rep.to(device)
 
         pred = model(input_data_rec, input_data_rep)
-        if args.attn == 1:
+
+        # visualization
+        # if args.attn == 3 and visualize:
+        #     att_rec2rep, att_rep2rec = pred[1]
+        #     k = input_data_rep[:, -50].argsort().cpu().numpy()[-1]
+        #     showAttention(input_data_rec[k], input_data_rep[k],
+        #                   (att_rec2rep[k], att_rep2rec[k]),
+        #                   idx2word=idx2word,
+        #                   filename=f"attention{cou}")
+        #     print(cou)
+        #     if cou == 20:
+        #         exit(0)
+
+        if args.attn == 1 or args.attn == 3:
             pred = pred[0]
         pred = nn.Sigmoid()(pred)
         out = pred.detach().cpu().numpy().argsort()[-at:][::-1].tolist()
@@ -90,7 +106,7 @@ def old_train(args, epoch, dataset, objective):
         optimizer.zero_grad()
 
         pred = model(input_data_rec, input_data_rep)
-        if args.attn == 1:
+        if args.attn == 1 or args.attn == 3:
             pred = pred[0]
         loss = objective(pred, labels)
 
@@ -242,15 +258,21 @@ def load_model(ckptname):
 
 def testAll(args):
     word2idx, vectors = create_model(args)
+    global idx2word
+    idx2word = {b:a for a,b in word2idx.items()}
     print("> Loading trained model and Test")
     max_recall = load_model(args.model_dump)
     print(f"max_recall: {max_recall}")
     test_data = load_test_data(args, word2idx)
     with torch.no_grad():
         model.eval()
-        do_predict(args, test_data)
+        do_predict(args, test_data, idx2word)
 
-def do_predict(args, test_data):
+        # for visualization
+        # dataset = load_data(args, word2idx, vectors)
+        # calculateRecall(dataset)
+
+def do_predict(args, test_data, idx2word):
     write = []
     for cou, data in enumerate(test_data):
         input_data_rec, input_data_rep = zip(*data)
@@ -262,7 +284,18 @@ def do_predict(args, test_data):
         input_data_rep = input_data_rep.to(device)
 
         pred = model(input_data_rec, input_data_rep)
-        if args.attn == 1:
+
+        # if args.attn == 3:
+        #     att_rec2rep, att_rep2rec = pred[1]
+        #     k = input_data_rep[:, -50].argsort().cpu().numpy()[-1]
+        #     showAttention(input_data_rec[k], input_data_rep[k],
+        #                   (att_rec2rep[k], att_rep2rec[k]),
+        #                   idx2word=idx2word,
+        #                   filename=f"attention{cou}")
+        #     if cou == 14:
+        #         exit()
+
+        if args.attn == 1 or args.attn == 3:
             pred = pred[0]
         pred1 = nn.Sigmoid()(pred)
         out = pred.detach().cpu().numpy().argsort()[::-1].tolist()[:10]
@@ -273,6 +306,50 @@ def do_predict(args, test_data):
 
     df = pd.DataFrame(write, columns=['Id', 'Predict'])
     df.to_csv(args.output_csv, index=None)
+
+def showAttention(rec, rep, attentions, idx2word, filename="attention"):
+    # Set up figure with colorbar
+    attentions_rec2rep = attentions[0].detach().cpu()[-100:, -50:]
+    attentions_rep2rec = attentions[1].detach().cpu()[-50:, -100:]
+    rec = rec.detach().cpu().numpy()[-100:]
+    rep = rep.detach().cpu().numpy()[-50:]
+    rec = [idx2word[i] for i in rec]
+    rep = [idx2word[i] for i in rep]
+    # embed()
+
+    fig = plt.figure(figsize=(20,10))
+    ax = fig.add_subplot(111)
+    cax = ax.matshow(attentions_rep2rec, cmap='copper')
+    fig.colorbar(cax)
+
+    # Set up axes
+    ax.set_xticklabels(rec, rotation=45, fontsize=6)
+    ax.set_yticklabels(rep, fontsize=6)
+
+    # Show label at every tick
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+    plt.savefig(f"atten_pic/{filename}_rep2rec.png")
+    plt.clf()
+    plt.close(fig)
+    ####################################################
+    fig = plt.figure(figsize=(10,20))
+    ax = fig.add_subplot(111)
+    cax = ax.matshow(attentions_rec2rep, cmap='copper')
+    fig.colorbar(cax)
+
+    # Set up axes
+    ax.set_xticklabels(rep, rotation=45, fontsize=6)
+    ax.set_yticklabels(rec, fontsize=6)
+
+    # Show label at every tick
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+    plt.savefig(f"atten_pic/{filename}_rec2rep.png")
+    plt.clf()
+    plt.close(fig)
 
 def main(args):
     # init

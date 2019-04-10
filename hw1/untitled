@@ -1,4 +1,0 @@
-CUDA_VISIBLE_DEVICES=9 python main.py -ml ggB_gru.tar -md ggB_gru_new.tar -lr 1e-3 -tr 1 -o bi2_gru_-3_B_3.csv -e 50
-CUDA_VISIBLE_DEVICES=9 python main.py -ml ggB_gru.tar -md ggB_gru_new.tar -lr 1e-3 -tr 1 -o bi2_gru_-3_B_5.csv
-
-CUDA_VISIBLE_DEVICES=9 python main.py -md ggB_gru_att.tar -lr 1e-3 -tr 1 -o bi2_gru_-3_att_3.csv
