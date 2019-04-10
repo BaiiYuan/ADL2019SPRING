@@ -1,6 +1,8 @@
+import os
+import pickle
 import numpy as np
 
-data_path = "../data"
+data_path = "./data"
 
 class Embedder:
     """
@@ -25,13 +27,13 @@ class Embedder:
         self.vectors = vectors
 
 
-    def get_embedding(senten, max_sent_len):
+    def get_embedding(self, senten, max_sent_len):
         if len(senten) < max_sent_len:
-            senten = ["<pad>"]*max_sent_len-len(senten) + senten
+            senten = ["<pad>"]*(max_sent_len-len(senten)) + senten
         else:
             senten = senten[:max_sent_len]
 
-        return [np.array(self.vectors[self.word2idx[w]]) for w in senten]
+        return [np.array(self.vectors[self.word2idx.get(w, 1)]) for w in senten]
 
     def __call__(self, sentences, max_sent_len):
         """
@@ -50,11 +52,14 @@ class Embedder:
             The contextualized embedding of the sentence tokens.
 
             The ndarray shape must be
-            ``(len(sentences), min(max(map(len, sentences)), max_sent_len), self.ctx_emb_dim)``
+            ``(len(sentences), min(max(map(len, sentences)), max_sent_len), self.n_ctx_embs, self.ctx_emb_dim)``
             and dtype must be ``np.float32``.
         """
+
         # TODO
         output_len = min(max(map(len, sentences)), max_sent_len)
-        output = [get_embedding(senten, output_len) for senten in sentences]
-        return np.empty(
-            (len(sentences), min(max(map(len, sentences)), max_sent_len), 0), dtype=np.float32)
+        output = [self.get_embedding(senten, output_len) for senten in sentences]
+        output = np.array(output)
+        output.reshape(list(output.shape)+[1])
+        return output
+        # return np.empty( (len(sentences), min(max(map(len, sentences)), max_sent_len), 0), dtype=np.float32)

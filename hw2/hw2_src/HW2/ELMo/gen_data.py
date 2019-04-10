@@ -17,6 +17,7 @@ print("Loading word2idx... ", end="")
 with open(os.path.join(data_path, "word2idx-vectors.pkl"), "rb") as f:
     word2idx, vectors = pickle.load(f)
 print(f"Consuming Time: {time()-t}");
+print(len(word2idx.keys()), vectors.shape)
 
 def preprocessSentence(raw_sentence):
     a = raw_sentence
@@ -44,8 +45,6 @@ def main():
     with open(os.path.join(data_path, "all_sentence.pkl"), "wb") as f:
         pickle.dump(res, f)
     print(f"Consuming Time: {time()-t1}"); t1 = time()
-
-    embed()
 
 if __name__ == '__main__':
     main()

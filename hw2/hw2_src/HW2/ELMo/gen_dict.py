@@ -16,11 +16,14 @@ def load_vectors(f):
     vectors = []
     for line in f:
         tokens = line.rstrip().split(' ')
-        if True: # tokens[0] in word_set:
+        if cou == 138703:
+            word2idx["Baiyuan"] = cou
+        else:
             word2idx[tokens[0]] = cou
-            cou += 1
-            stdout.write("\r{}".format(cou))
-            vectors.append(list(map(float, tokens[1:])))
+        cou += 1
+        stdout.write("\r{} {}".format(cou, len(word2idx)))
+        vectors.append(list(map(float, tokens[1:])))
+    print(len(word2idx.keys()), len(vectors))
     print(" ")
     vectors = torch.tensor(vectors)
     vectors = torch.cat([torch.nn.init.uniform_(torch.empty(1, 300)), vectors], dim=0)
