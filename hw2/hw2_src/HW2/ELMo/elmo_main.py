@@ -25,22 +25,30 @@ pad_token = 0
 unk_token = 1
 bos_token = 2
 
-def load_data(args, word2idx, vectors):
+def load_data(args):
     print("Loading data...")
     dataset = []
+    all_label = set([pad_token, unk_token, bos_token])
+
     with open(os.path.join(data_path, "all_sentence.pkl"), "rb") as f:
         raw = pickle.load(f)
-    for senten in raw:
+    print("Done")
+
+    for cou, senten in enumerate(raw):
+        all_label.update(senten)
         if len(senten) < args.max_length:
             senten = [pad_token]*(args.max_length-len(senten))+ [bos_token] + senten
         else:
             senten = [bos_token] + senten[:args.max_length]
         assert(len(senten) == args.max_length+1)
         dataset.append(senten)
+        stdout.write(f"\r{cou}/{len(raw)}")
 
-    return dataset
+    dictid2idx = {dictid:idx for idx,dictid in enumerate(all_label)}
 
-def data_generator(args, data, batch_size_origin, shuffle=True):
+    return dataset, dictid2idx
+
+def data_generator(args, data, batch_size_origin, dictid2idx, shuffle=True):
     if shuffle:
         used_data = random.sample(data, len(data))
     else:
@@ -58,14 +66,20 @@ def data_generator(args, data, batch_size_origin, shuffle=True):
 
         batch_data = np.array(used_data[start:end])
 
-        input_data = torch.tensor(batch_data[:, :args.max_length], dtype=torch.long)
-        output_data = torch.tensor(batch_data[:, -args.max_length:], dtype=torch.long)
+        input_data = batch_data[:, :args.max_length]
+        output_data = batch_data[:, -args.max_length:]
+
+        output_data = output_data.tolist()
+        output_data = [[dictid2idx[i] for i in line] for line in output_data]
+
+        input_data = torch.tensor(input_data, dtype=torch.long)
+        output_data = torch.tensor(output_data, dtype=torch.long)
 
         yield input_data.to(device), output_data.to(device)
 
-def train(args, epoch, dataset, objective):
+def train(args, epoch, dataset, objective, dictid2idx):
     print("------------------------------------------")
-    gen = data_generator(args, dataset, args.batch_size, shuffle=True)  # generate train data
+    gen = data_generator(args, dataset, args.batch_size, dictid2idx, shuffle=True)  # generate train data
 
     t1 = time.time()
     epoch_loss = []
@@ -102,10 +116,10 @@ def train(args, epoch, dataset, objective):
                                                                               np.mean(epoch_loss)))
 
 def trainIter(args):
-    dataset, objective, word2idx, max_recall = trainInit(args)
+    dataset, objective, word2dictid, dictid2idx, max_recall = trainInit(args)
     print(max_recall)
     for epoch in range(args.epochs):
-        train(args, epoch+1, dataset, objective)
+        train(args, epoch+1, dataset, objective, dictid2idx)
         with torch.no_grad():
             model.eval()
             pass
@@ -114,27 +128,30 @@ def trainIter(args):
 
 def trainInit(args):
     max_recall = 0
-    word2idx, vectors = create_model(args)
-    idx2word = {b:a for a,b in word2idx.items()}
+    dataset, dictid2idx = load_data(args)
+
+    word2dictid, vectors = create_model(args, dictid2idx)
+    dictid2word = {b:a for a,b in word2dictid.items()}
 
     if args.model_load != None:
         print("> Loading trained model and Train")
         load_model(args.model_load)
 
-    dataset = load_data(args, word2idx, vectors)
+
     objective = nn.NLLLoss().to(device)
 
-    return dataset, objective, word2idx, max_recall
+    return dataset, objective, word2dictid, dictid2idx, max_recall
 
-def create_model(args):
+def create_model(args, dictid2idx):
     print("> Create model.")
     with open(os.path.join(args.data_path, "word2idx-vectors.pkl"), "rb") as f:
-        [word2idx, vectors] = pickle.load(f)
+        [word2dictid, vectors] = pickle.load(f)
 
     global model
     model = elmo_models.elmo_model(hidden_size=args.hidden_size,
                                    drop_p=args.drop_p,
-                                   num_of_words=len(word2idx)
+                                   num_of_words=len(word2dictid),
+                                   out_of_words=len(dictid2idx)
                                 )
 
     model.word_embedding.load_state_dict({'weight': vectors.to(torch.float32)})
@@ -147,7 +164,7 @@ def create_model(args):
     optimizer = optim.Adam(model.parameters(),
                            lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
 
-    return word2idx, vectors
+    return word2dictid, vectors
 
 def main(args):
     trainIter(args)
