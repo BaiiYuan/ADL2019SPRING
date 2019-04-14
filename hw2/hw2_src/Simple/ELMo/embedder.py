@@ -5,11 +5,13 @@ import torch
 from pytorch_pretrained_bert import BertTokenizer, BertModel
 from IPython import embed
 
+import ELMo.elmo_models as elmo_models
+
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
 data_path = "./data"
 
-class Embedder: # BERT
+class Embedder: # ELMO
     """
     The class responsible for loading a pre-trained ELMo model and provide the ``embed``
     functionality for downstream BCN model.
@@ -26,20 +28,31 @@ class Embedder: # BERT
         self.n_ctx_embs = n_ctx_embs
         self.ctx_emb_dim = ctx_emb_dim
         # TODO
-        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        bert = BertModel.from_pretrained('bert-base-uncased')
-        bert.eval()
-        bert.to(device)
+        model = elmo_models.elmo_model_usual_softmax(input_size=512,
+                                                     hidden_size=512,
+                                                     drop_p=0.5,
+                                                     out_of_words=24252
+                                                     )
+        ckpt = torch.load("ELMo/elmo_model_24252_ver1.tar")
+        model.load_state_dict(ckpt['model'])
+        model.to(device)
+        model.eval()
 
-        self.tokenizer = tokenizer
-        self.bert = bert
+        self.elmo = model
+        self.max_sent_len = 64
+        self.max_word_len = 16
+        self.char_pad = 256
+        self.sos = np.array([257]+[self.char_pad]*(self.max_word_len-1))
+        self.word_pad = np.array([self.char_pad]*self.max_word_len)
 
-    def cut_and_pad(self, indexed_token, max_sent_len):
-        if len(indexed_token) < max_sent_len:
-            indexed_token = [0]*(max_sent_len-len(indexed_token)) + indexed_token
+    def _pad_and_cut(self, seq, max_leng, pad, tensor):
+        if len(seq) < max_leng:
+            seq = seq + [pad]*(max_leng-len(seq))
         else:
-            indexed_token = indexed_token[:max_sent_len]
-        return indexed_token
+            seq = seq[:max_leng]
+        if tensor:
+            return np.array(seq)
+        return seq
 
     def __call__(self, sentences, max_sent_len):
         """
@@ -63,23 +76,34 @@ class Embedder: # BERT
         """
 
         # TODO
+        batch_size = len(sentences)
         output_len = min(max(map(len, sentences)), max_sent_len)
-        sentences = [" ".join(i) for i in sentences]
-        tokenized_texts = [self.tokenizer.tokenize(text) for text in sentences]
-        indexed_tokens = [self.tokenizer.convert_tokens_to_ids(tokenized_text) for tokenized_text in tokenized_texts]
-        # output_len = min(max(map(len, indexed_tokens)), max_sent_len)
-        indexed_tokens = [self.cut_and_pad(indexed_token, output_len) for indexed_token in indexed_tokens]
-        tokens_tensor = torch.tensor(indexed_tokens).to(device)
-        with torch.no_grad():
-            encoded_layers, _ = self.bert(tokens_tensor)
+        input_data = []
 
-        encoded_layers = [encoded_layer.cpu().detach().numpy().reshape(-1, output_len, 1, 768) for encoded_layer in encoded_layers]
-        encoded_layers = np.concatenate(encoded_layers, axis=2)
+        for sent in sentences:
+            out = [ self._pad_and_cut(seq=[min(ord(c), 258) for c in word],
+                                      max_leng=self.max_word_len,
+                                      pad=self.char_pad,
+                                      tensor=False
+                                      ) for word in sent]
+            pad_out = self._pad_and_cut(seq=out,
+                                        max_leng=output_len,
+                                        pad=self.word_pad,
+                                        tensor=False
+                                        )
+
+            input_data.append(pad_out)
+
+        input_data = torch.tensor(input_data, dtype=torch.int64)
+        input_data = input_data.to(device)
+        embedding = self.elmo.get_contexulize_embedding(input_data)
+        embedding = [item.detach().cpu().numpy().reshape(batch_size, output_len, 1, -1) for item in embedding]
+        encoded_layers = np.concatenate(embedding, axis=2)
         return encoded_layers
         # return np.empty( (len(sentences), min(max(map(len, sentences)), max_sent_len), 0), dtype=np.float32)
 
 
-class elmo_Embedder: # handout
+class fake_Embedder: # handout
     """
     The class responsible for loading a pre-trained ELMo model and provide the ``embed``
     functionality for downstream BCN model.
@@ -89,10 +113,11 @@ class elmo_Embedder: # handout
     the ``ctx_emb_dim`` parameter.
     """
 
-    def __init__(self, ctx_emb_dim):
+    def __init__(self, n_ctx_embs, ctx_emb_dim):
         """
         The value of the parameters should also be specified in the BCN model config.
         """
+        self.n_ctx_embs = n_ctx_embs
         self.ctx_emb_dim = ctx_emb_dim
         # TODO
         with open(os.path.join(data_path, "word2idx-vectors.pkl"), "rb") as f:
@@ -132,9 +157,10 @@ class elmo_Embedder: # handout
         """
 
         # TODO
+        batch_size = len(sentences)
         output_len = min(max(map(len, sentences)), max_sent_len)
         output = [self.get_embedding(senten, output_len) for senten in sentences]
         output = np.array(output)
-        output.reshape(list(output.shape)+[1])
+        output = output.reshape(batch_size, output_len, 1, -1)
         return output
         # return np.empty( (len(sentences), min(max(map(len, sentences)), max_sent_len), 0), dtype=np.float32)
