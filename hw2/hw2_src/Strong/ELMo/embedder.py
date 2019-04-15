@@ -73,7 +73,7 @@ class Embedder: # BERT
             encoded_layers, _ = self.bert(tokens_tensor)
 
         encoded_layers = [encoded_layer.cpu().detach().numpy().reshape(-1, output_len, 1, 768) for encoded_layer in encoded_layers]
-        encoded_layers = np.concatenate(encoded_layers[-5:], axis=2)
+        encoded_layers = np.concatenate(encoded_layers[-1:], axis=2)
         return encoded_layers
         # return np.empty( (len(sentences), min(max(map(len, sentences)), max_sent_len), 0), dtype=np.float32)
 

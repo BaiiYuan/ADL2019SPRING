@@ -58,9 +58,11 @@ class elmo_model(nn.Module):
 
         return loss
 
-    def get_contexulize_embedding(self, x):
-        embedding_data_f = self.char_embed(x)
-        embedding_data_b = embedding_data_f.flip(1)
+    def get_contexulize_embedding(self, x_f):
+        x_b = x_f.flip(1)
+
+        embedding_data_f = self.char_embed(x_f)
+        embedding_data_b = self.char_embed(x_b)
 
         lstm1_output_f, _ = self.lstm1_f(self.dropout(embedding_data_f))
         lstm2_output_f, _ = self.lstm2_f(self.dropout(lstm1_output_f))
