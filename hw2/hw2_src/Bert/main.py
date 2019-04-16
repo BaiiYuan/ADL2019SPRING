@@ -22,7 +22,7 @@ from pytorch_pretrained_bert import BertTokenizer, BertForSequenceClassification
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
-
+BERT = 'bert-large-uncased'
 
 pad_token = 0
 unk_token = 1
@@ -64,7 +64,7 @@ def process_df(df, tokenizer):
 def load_data(args):
     print("[*] Loading data...")
     dataset = {}
-    tokenizer = BertTokenizer.from_pretrained('bert-large-uncased', do_lower_case=True, do_basic_tokenize=True)
+    tokenizer = BertTokenizer.from_pretrained(BERT, do_lower_case=True, do_basic_tokenize=True)
     df_train = pd.read_csv(os.path.join(args.data_path, "train.csv"))
     df_dev = pd.read_csv(os.path.join(args.data_path, "dev.csv"))
     df_test = pd.read_csv(os.path.join(args.data_path, "test.csv"))
@@ -226,7 +226,7 @@ def create_model(args):
     print("[*] Create model.")
 
     global model
-    model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=5)
+    model = BertForSequenceClassification.from_pretrained(BERT, num_labels=5)
     # for i in model.bert.named_parameters():
     #     i[1].requires_grad=False
 
