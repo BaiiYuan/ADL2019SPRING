@@ -17,63 +17,84 @@ class elmo_model(nn.Module):
         self.num_layers = 1
         self.out_of_words = out_of_words
 
-        self.char_embed = CharEmbedding(num_embeddings=259,
+        self.char_embed = CharEmbedding(num_embeddings=260,
                                         embedding_dim=16,
                                         padding_idx=256,
-                                        conv_filters=[(3, 128), (3, 128), (3, 128)],
+                                        conv_filters=[(1, 32), (2, 64), (3, 128), (4, 128), (5, 256), (6, 256), (7, 512)],
                                         n_highways=2,
                                         projection_size=hidden_size)
 
-        self.lstm1_f = nn.LSTM(hidden_size, hidden_size, batch_first=True, bidirectional=False)
-        self.lstm2_f = nn.LSTM(hidden_size, hidden_size, batch_first=True, bidirectional=False)
-        self.lstm1_b = nn.LSTM(hidden_size, hidden_size, batch_first=True, bidirectional=False)
-        self.lstm2_b = nn.LSTM(hidden_size, hidden_size, batch_first=True, bidirectional=False)
+        hidden_size_lstm = hidden_size*4
+        self.lstm1_f = nn.LSTM(hidden_size, hidden_size_lstm, batch_first=True, bidirectional=False)
+        self.lstm2_f = nn.LSTM(hidden_size, hidden_size_lstm, batch_first=True, bidirectional=False)
+        self.lstm1_b = nn.LSTM(hidden_size, hidden_size_lstm, batch_first=True, bidirectional=False)
+        self.lstm2_b = nn.LSTM(hidden_size, hidden_size_lstm, batch_first=True, bidirectional=False)
 
-        self.out = nn.AdaptiveLogSoftmaxWithLoss(in_features=hidden_size*2,
+        self.proj1_f = nn.Linear(hidden_size_lstm, hidden_size)
+        self.proj2_f = nn.Linear(hidden_size_lstm, hidden_size)
+        self.proj1_b = nn.Linear(hidden_size_lstm, hidden_size)
+        self.proj2_b = nn.Linear(hidden_size_lstm, hidden_size)
+
+        self.out = nn.AdaptiveLogSoftmaxWithLoss(in_features=hidden_size,
                                                  n_classes=out_of_words,
                                                  cutoffs=[20,200,1000,10000],
                                                  div_value=4.0,
                                                  head_bias=False)
 
 
-    def forward(self, x_f, labels):
+    def forward(self, x_f, labels_f):
         batch_size = x_f.shape[0]
         x_b = x_f.flip(1)
+        labels_b = labels_f.flip(1)
 
+        x_f = x_f[:, :-1]
+        x_b = x_b[:, :-1]
+        labels_f = labels_f[:,1:]
+        labels_b = labels_b[:,1:]
 
         embedding_data_f = self.char_embed(x_f)
-        embedding_data_b = self.char_embed(x_b)
-
         lstm1_output_f, _ = self.lstm1_f(self.dropout(embedding_data_f))
-        lstm2_output_f, _ = self.lstm2_f(self.dropout(lstm1_output_f))
+        p1_f = self.proj1_f(lstm1_output_f)
+        lstm2_output_f, _ = self.lstm2_f(self.dropout(p1_f))
+        p2_f = self.proj2_f(lstm2_output_f)
 
+        embedding_data_b = self.char_embed(x_b)
         lstm1_output_b, _ = self.lstm1_b(self.dropout(embedding_data_b))
-        lstm2_output_b, _ = self.lstm2_b(self.dropout(lstm1_output_b))
+        p1_b = self.proj1_b(lstm1_output_b)
+        lstm2_output_b, _ = self.lstm2_b(self.dropout(p1_b))
+        p2_b = self.proj2_b(lstm2_output_b)
 
-        lstm2_output = torch.cat((lstm2_output_f, lstm2_output_b.flip(1)), dim=2)
 
-        loss = 0
+        loss_f = 0
         for i in range(batch_size):
-            loss += self.out(self.dropout(lstm2_output)[i], labels[i]).loss
+            loss_f += self.out(self.dropout(p2_f)[i], labels_f[i]).loss
+        loss_b = 0
+        for i in range(batch_size):
+            loss_b += self.out(self.dropout(p2_b)[i], labels_b[i]).loss
 
-        return loss
+        return loss_f, loss_b
 
     def get_contexulize_embedding(self, x_f):
         x_b = x_f.flip(1)
+        x_f = x_f[:, :-1]
+        x_b = x_b[:, :-1]
 
         embedding_data_f = self.char_embed(x_f)
-        embedding_data_b = self.char_embed(x_b)
-
         lstm1_output_f, _ = self.lstm1_f(self.dropout(embedding_data_f))
-        lstm2_output_f, _ = self.lstm2_f(self.dropout(lstm1_output_f))
+        p1_f = self.proj1_f(lstm1_output_f)
+        lstm2_output_f, _ = self.lstm2_f(self.dropout(p1_f))
+        p2_f = self.proj2_f(lstm2_output_f)
 
+        embedding_data_b = self.char_embed(x_b)
         lstm1_output_b, _ = self.lstm1_b(self.dropout(embedding_data_b))
-        lstm2_output_b, _ = self.lstm2_b(self.dropout(lstm1_output_b))
+        p1_b = self.proj1_b(lstm1_output_b)
+        lstm2_output_b, _ = self.lstm2_b(self.dropout(p1_b))
+        p2_b = self.proj2_b(lstm2_output_b)
 
 
-        embedding_data_output = torch.cat((embedding_data_f, embedding_data_b.flip(1)), dim=2)
-        lstm1_output = torch.cat((lstm1_output_f, lstm1_output_b.flip(1)), dim=2)
-        lstm2_output = torch.cat((lstm2_output_f, lstm2_output_b.flip(1)), dim=2)
+        embedding_data_output = torch.cat((embedding_data_f[:,1:], embedding_data_b[:,1:].flip(1)), dim=2)
+        lstm1_output = torch.cat((p1_f[:,1:], p1_b[:,1:].flip(1)), dim=2)
+        lstm2_output = torch.cat((p2_f[:,1:], p2_b[:,1:].flip(1)), dim=2)
 
         return (embedding_data_output, lstm1_output, lstm2_output)
 
@@ -261,6 +282,76 @@ class CharEmbedding(nn.Module):
         emb = self.projection(emb)
 
         return emb
+
+class old_elmo_model(nn.Module):
+    def __init__(self, input_size=300, classes=1, hidden_size=512,
+                 drop_p=0.5, out_of_words=80000):
+        super(elmo_model, self).__init__()
+
+        self.dropout = nn.Dropout(drop_p)
+        self.num_layers = 1
+        self.out_of_words = out_of_words
+
+        self.char_embed = CharEmbedding(num_embeddings=260,
+                                        embedding_dim=16,
+                                        padding_idx=256,
+                                        conv_filters=[(3, 128), (3, 128), (3, 128)],
+                                        n_highways=2,
+                                        projection_size=hidden_size)
+
+        self.lstm1_f = nn.LSTM(hidden_size, hidden_size, batch_first=True, bidirectional=False)
+        self.lstm2_f = nn.LSTM(hidden_size, hidden_size, batch_first=True, bidirectional=False)
+        self.lstm1_b = nn.LSTM(hidden_size, hidden_size, batch_first=True, bidirectional=False)
+        self.lstm2_b = nn.LSTM(hidden_size, hidden_size, batch_first=True, bidirectional=False)
+
+
+        self.out = nn.AdaptiveLogSoftmaxWithLoss(in_features=hidden_size*2,
+                                                 n_classes=out_of_words,
+                                                 cutoffs=[20,200,1000,10000],
+                                                 div_value=4.0,
+                                                 head_bias=False)
+
+
+    def forward(self, x_f, labels):
+        batch_size = x_f.shape[0]
+        x_b = x_f.flip(1)
+
+
+        embedding_data_f = self.char_embed(x_f)
+        embedding_data_b = self.char_embed(x_b)
+
+        lstm1_output_f, _ = self.lstm1_f(self.dropout(embedding_data_f))
+        lstm2_output_f, _ = self.lstm2_f(self.dropout(lstm1_output_f))
+
+        lstm1_output_b, _ = self.lstm1_b(self.dropout(embedding_data_b))
+        lstm2_output_b, _ = self.lstm2_b(self.dropout(lstm1_output_b))
+
+        lstm2_output = torch.cat((lstm2_output_f, lstm2_output_b.flip(1)), dim=2)
+
+        loss = 0
+        for i in range(batch_size):
+            loss += self.out(self.dropout(lstm2_output)[i], labels[i]).loss
+
+        return loss
+
+    def get_contexulize_embedding(self, x_f):
+        x_b = x_f.flip(1)
+
+        embedding_data_f = self.char_embed(x_f)
+        embedding_data_b = self.char_embed(x_b)
+
+        lstm1_output_f, _ = self.lstm1_f(self.dropout(embedding_data_f))
+        lstm2_output_f, _ = self.lstm2_f(self.dropout(lstm1_output_f))
+
+        lstm1_output_b, _ = self.lstm1_b(self.dropout(embedding_data_b))
+        lstm2_output_b, _ = self.lstm2_b(self.dropout(lstm1_output_b))
+
+
+        embedding_data_output = torch.cat((embedding_data_f, embedding_data_b.flip(1)), dim=2)
+        lstm1_output = torch.cat((lstm1_output_f, lstm1_output_b.flip(1)), dim=2)
+        lstm2_output = torch.cat((lstm2_output_f, lstm2_output_b.flip(1)), dim=2)
+
+        return (embedding_data_output, lstm1_output, lstm2_output)
 
 
 class elmo_model_usual_softmax(nn.Module):

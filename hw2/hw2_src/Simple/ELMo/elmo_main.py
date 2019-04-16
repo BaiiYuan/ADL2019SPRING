@@ -32,12 +32,12 @@ bos_token = 2
 max_sent_len = 64
 max_word_len = 16
 
-def _pad_and_cut(seq, max_leng, pad, tensor):
+def _pad_and_cut(seq, max_leng, pad, array):
     if len(seq) < max_leng:
         seq = seq + [pad]*(max_leng-len(seq))
     else:
         seq = seq[:max_leng]
-    if tensor:
+    if array:
         return np.array(seq)
     return seq
 
@@ -59,15 +59,15 @@ def load_data(args):
                 word_count[w] += 1
             stdout.write("\r> {}".format(cou))
             cou+=1
-            if cou > 2000000:
+            if cou > 1000000:
                 break
 
     print("\nProcessing Data ... ")
     all_word = list(word_count.keys())
     print(f"[*] Before: len -> {len(all_word)}")
 
-    top50k = sorted(word_count.items(), key=lambda d: -d[1])[:50000-2]
-    all_word = ["<pad>", "<unk>"] + [w[0] for w in top50k]
+    top50k = sorted(word_count.items(), key=lambda d: -d[1])[:80000-4]
+    all_word = ["<pad>", "<unk>", "<sos>", "<eos>"] + [w[0] for w in top50k]
     all_num = [w[1] for w in top50k]
 
     print(np.sum(all_num[:20]),
@@ -83,7 +83,12 @@ def load_data(args):
 
 
     char_pad = 256
-    sos = np.array([257]+[char_pad]*(max_word_len-1))
+    char_sos = 257
+    char_eos = 258
+    char_unk = 259
+
+    sos = np.array([char_sos]+[char_pad]*(max_word_len-1))
+    eos = np.array([char_eos]+[char_pad]*(max_word_len-1))
     word_pad = np.array([char_pad]*max_word_len)
 
     cou = 0
@@ -91,32 +96,30 @@ def load_data(args):
         stdout.write("\r> {}".format(cou))
         cou += 1
         word_list = sent.split()
-        out = [ _pad_and_cut(seq=[min(ord(c), 258) for c in word],
+        out = [ _pad_and_cut(seq=[min(ord(c), char_unk) for c in word],
                              max_leng=max_word_len,
                              pad=char_pad,
-                             tensor=True
+                             array=True
                              ) for word in word_list]
-        if args.reverse != 1:
-            out = out[::-1]
 
         pad_out = _pad_and_cut(seq=out,
                                max_leng=max_sent_len-1,
                                pad=word_pad,
-                               tensor=False
+                               array=False
                                )
-        pad_out = [sos] + pad_out
+        pad_out = [sos] + pad_out + [eos]
 
-        target = word_list[1:]
-        target = [word2idx.get(word, 0) for word in target]
+        target = word_list[:]
+        target = [word2idx.get(word, 1) for word in target]
         pad_target = _pad_and_cut(seq=target,
-                                  max_leng=max_sent_len,
+                                  max_leng=max_sent_len-1,
                                   pad=0,
-                                  tensor=False
+                                  array=False
                                   )
-
+        pad_target = [2] + pad_target + [3]
         dataset.append((pad_out, pad_target))
-        assert len(pad_out) == 64
-        assert len(pad_target) == 64
+        assert len(pad_out) == 65
+        assert len(pad_target) == 65
     print("")
     return dataset, word2idx
 
@@ -186,12 +189,15 @@ def train(args, epoch, dataset, criterion, min_loss, valid_data):
         # for i in range(input_data.shape[0]):
         #     loss += criterion(pred[i], labels[i])
 
-        loss = pred
-        loss.backward()
+        loss_f, loss_b = pred
+        loss_f.backward()
+        loss_b.backward()
         optimizer.step()
 
-        loss = loss.data.cpu().item()
-        epoch_loss.append(loss)
+        loss_f = loss_f.data.cpu().item()/args.batch_size
+        loss_b = loss_b.data.cpu().item()/args.batch_size
+
+        epoch_loss.append((loss_f+loss_b)/2)
 
         # acc = (pred.argmax(dim=2) == labels).float().cpu().tolist()
         # epoch_acc.extend(acc)
@@ -231,11 +237,12 @@ def valid(args, dataset, criterion):
         pred = model(input_data, labels)
         # for i in range(input_data.shape[0]):
         #     loss += criterion(pred[i], labels[i])
-        loss= pred
+        loss_f, loss_b = pred
 
-        loss = loss.data.cpu().item()
-        epoch_loss.append(loss)
+        loss_f = loss_f.data.cpu().item()/args.batch_size
+        loss_b = loss_b.data.cpu().item()/args.batch_size
 
+        epoch_loss.append((loss_f+loss_b)/2)
         # acc = (pred.argmax(dim=2) == labels).float().cpu().tolist()
         # epoch_acc.extend(acc)
 
@@ -324,8 +331,8 @@ if __name__ == '__main__':
         parser.add_argument('-e', '--epochs', type=int, default=30)
         parser.add_argument('-b', '--batch_size', type=int, default=256)
         parser.add_argument('-hn', '--hidden_size', type=int, default=512)
-        parser.add_argument('-lr', '--lr_rate', type=float, default=1e-4)
-        parser.add_argument('-dr', '--drop_p', type=float, default=0.5)
+        parser.add_argument('-lr', '--lr_rate', type=float, default=1e-3)
+        parser.add_argument('-dr', '--drop_p', type=float, default=0.1)
         parser.add_argument('-rv', '--reverse', type=int, default=0)
         parser.add_argument('-md', '--model_dump', type=str, default='./elmo_model_ver1.tar')
         parser.add_argument('-ml', '--model_load', type=str, default=None, help='Print every p iterations')

@@ -27,13 +27,16 @@ class Embedder: # ELMO
         """
         self.n_ctx_embs = n_ctx_embs
         self.ctx_emb_dim = ctx_emb_dim
+
+        model_name = "ELMo/elmo_model_adap_big.tar"
         # TODO
-        model = elmo_models.elmo_model_usual_softmax(input_size=512,
-                                                     hidden_size=512,
-                                                     drop_p=0.5,
-                                                     out_of_words=24252
-                                                     )
-        ckpt = torch.load("ELMo/elmo_model_24252_ver1.tar")
+        model = elmo_models.elmo_model(input_size=512,
+                                       hidden_size=512,
+                                       drop_p=0.,
+                                       out_of_words=80000
+                                       )
+        ckpt = torch.load(model_name)
+        print(model_name)
         model.load_state_dict(ckpt['model'])
         model.to(device)
         model.eval()
@@ -41,8 +44,14 @@ class Embedder: # ELMO
         self.elmo = model
         self.max_sent_len = 64
         self.max_word_len = 16
+
         self.char_pad = 256
-        self.sos = np.array([257]+[self.char_pad]*(self.max_word_len-1))
+        self.char_sos = 257
+        self.char_eos = 258
+        self.char_unk = 259
+
+        self.sos = np.array([self.char_sos]+[self.char_pad]*(self.max_word_len-1))
+        self.eos = np.array([self.char_eos]+[self.char_pad]*(self.max_word_len-1))
         self.word_pad = np.array([self.char_pad]*self.max_word_len)
 
     def _pad_and_cut(self, seq, max_leng, pad, tensor):
@@ -81,7 +90,7 @@ class Embedder: # ELMO
         input_data = []
 
         for sent in sentences:
-            out = [ self._pad_and_cut(seq=[min(ord(c), 258) for c in word],
+            out = [ self._pad_and_cut(seq=[min(ord(c), 259) for c in word],
                                       max_leng=self.max_word_len,
                                       pad=self.char_pad,
                                       tensor=False
@@ -92,7 +101,9 @@ class Embedder: # ELMO
                                         tensor=False
                                         )
 
-            input_data.append(pad_out)
+            input_data.append([self.sos]+pad_out+[self.eos])
+
+
 
         input_data = torch.tensor(input_data, dtype=torch.int64)
         input_data = input_data.to(device)
