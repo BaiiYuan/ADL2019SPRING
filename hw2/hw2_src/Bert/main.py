@@ -50,8 +50,6 @@ def process_df(df, tokenizer):
     labels = df.values[:, 2].tolist()
     num = df.shape[0]
 
-
-    sents = [process_sent(sent) for sent in sents]
     sents = [tokenizer.tokenize(sent) for sent in sents]
     sents = [tokenizer.convert_tokens_to_ids(sent) for sent in sents]
     sents = [_pad_and_cut(sent, args.max_length, 0) for sent in sents]

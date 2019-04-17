@@ -233,26 +233,27 @@ def valid(args, dataset, criterion):
     t1 = time.time()
     epoch_loss = []
     epoch_acc = []
+    tmp_f, tmp_b = [], []
     for idx, (input_data, labels) in enumerate(gen):
         loss = 0
         pred = model(input_data, labels)
-        # for i in range(input_data.shape[0]):
-        #     loss += criterion(pred[i], labels[i])
+
         loss_f, loss_b = pred
 
         loss_f = loss_f.data.cpu().item()/args.batch_size
         loss_b = loss_b.data.cpu().item()/args.batch_size
 
         epoch_loss.append((loss_f+loss_b)/2)
-        valid_loss.append((loss_f, loss_b))
-        # acc = (pred.argmax(dim=2) == labels).float().cpu().tolist()
-        # epoch_acc.extend(acc)
+        tmp_f.append(loss_f)
+        tmp_b.append(loss_b)
 
         stdout.write("\r> Valid: Idx: {}, Loss: {:.4f}, Acc: {:.2f}%".format(idx,
                                                                              np.mean(epoch_loss),
                                                                              0#np.mean(epoch_acc)*100,
                                                                              ))
-
+    valid_loss.append((np.mean(tmp_f), np.mean(tmp_b)))
+    np.save("train_loss.npy", train_loss)
+    np.save("valid_loss.npy", valid_loss)
     print("\n> Spends {:.2f} seconds.".format(time.time() - t1))
     print("[*] The Validation dataset Loss is {:.4f}".format(np.mean(epoch_loss)))
     return np.mean(epoch_loss)
@@ -334,7 +335,7 @@ if __name__ == '__main__':
         print(device)
         parser = argparse.ArgumentParser()
         parser.add_argument('-dp', '--data_path', type=str, default='../data')
-        parser.add_argument('-e', '--epochs', type=int, default=30)
+        parser.add_argument('-e', '--epochs', type=int, default=2)
         parser.add_argument('-b', '--batch_size', type=int, default=256)
         parser.add_argument('-hn', '--hidden_size', type=int, default=512)
         parser.add_argument('-lr', '--lr_rate', type=float, default=1e-3)
