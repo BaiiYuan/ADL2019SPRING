@@ -8,21 +8,20 @@ import sys
 import time
 import ipdb
 import random
-import pickle
 import argparse
 import numpy as np
 import pandas as pd
 
 from sys import stdout
 from IPython import embed
-from collections import Counter
-from tqdm import tqdm
 from sklearn.model_selection import train_test_split
-from pytorch_pretrained_bert import BertTokenizer, BertForSequenceClassification
+from pytorch_pretrained_bert.modeling import BertForSequenceClassification
+from pytorch_pretrained_bert.tokenization import BertTokenizer
+from pytorch_pretrained_bert.optimization import BertAdam, warmup_linear
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
-BERT = 'bert-large-uncased'
+BERT = 'bert-large-cased'
 
 pad_token = 0
 unk_token = 1
@@ -52,7 +51,6 @@ def process_df(df, tokenizer):
     num = df.shape[0]
 
 
-
     sents = [process_sent(sent) for sent in sents]
     sents = [tokenizer.tokenize(sent) for sent in sents]
     sents = [tokenizer.convert_tokens_to_ids(sent) for sent in sents]
@@ -64,7 +62,7 @@ def process_df(df, tokenizer):
 def load_data(args):
     print("[*] Loading data...")
     dataset = {}
-    tokenizer = BertTokenizer.from_pretrained(BERT, do_lower_case=True, do_basic_tokenize=True)
+    tokenizer = BertTokenizer.from_pretrained(BERT, do_lower_case=False, do_basic_tokenize=True)
     df_train = pd.read_csv(os.path.join(args.data_path, "train.csv"))
     df_dev = pd.read_csv(os.path.join(args.data_path, "dev.csv"))
     df_test = pd.read_csv(os.path.join(args.data_path, "test.csv"))
@@ -72,7 +70,8 @@ def load_data(args):
     train_data = process_df(df_train, tokenizer)
     valid_data = process_df(df_dev, tokenizer)
 
-    dataset["train"], dataset["dev"] = train_test_split(train_data+valid_data, test_size=1000)
+    dataset["train"], dataset["dev"] = train_data, valid_data # train_test_split(train_data+valid_data, test_size=0.1)
+    print(len(dataset["train"]), len(dataset["dev"]))
     dataset["test"] = process_df(df_test, tokenizer)
 
     return dataset, tokenizer
@@ -126,7 +125,7 @@ def valid_data_generator(args, data, batch_size_origin, shuffle=True):
         yield input_data.to(device), labels.to(device)
 
 def train(args, epoch, dataset, criterion, max_acc):
-    print("------------------------------------------")
+    print("\n------------------------------------------")
     gen = data_generator(args, dataset["train"], args.batch_size, shuffle=True)  # generate train data
 
     t1 = time.time()
@@ -174,7 +173,7 @@ def train(args, epoch, dataset, criterion, max_acc):
     return max_acc
 
 def valid(args, dataset, criterion):
-    print("\n------------------------------------------")
+    print("------------------------------------------")
     gen = valid_data_generator(args, dataset["dev"], args.batch_size, shuffle=False)  # generate train data
     t1 = time.time()
     epoch_loss = []
@@ -215,14 +214,14 @@ def trainIter(args):
 def trainInit(args):
     max_acc = 0.
     dataset, tokenizer = load_data(args)
-    create_model(args)
+    create_model(args, dataset)
 
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     criterion = criterion.to(device)
 
     return dataset, tokenizer, criterion, max_acc
 
-def create_model(args):
+def create_model(args, dataset):
     print("[*] Create model.")
 
     global model
@@ -233,9 +232,26 @@ def create_model(args):
     model = model.to(device)
     # print(model)
 
+    param_optimizer = list(model.named_parameters())
+
+    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+        {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+    ]
+
+    num_train_optimization_steps = int(
+            len(dataset["train"]) / args.batch_size / args.gradient_accumulation_steps) * args.epochs
+
     global optimizer
-    optimizer = optim.Adam(model.parameters(),
-                           lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
+
+    optimizer = BertAdam(optimizer_grouped_parameters,
+                         lr=args.lr_rate,
+                         warmup=0.1,
+                         t_total=num_train_optimization_steps)
+
+    # optimizer = optim.Adam(model.parameters(),
+    #                        lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
     return
 
 def save_model(args, epoch, max_acc):
@@ -247,19 +263,20 @@ def save_model(args, epoch, max_acc):
         'max_acc': max_acc
     }, args.model_dump)
 
-def load_model(ckptname):
+def load_model(ckptname, train=False):
     print("> Loading..")
     ckpt = torch.load(ckptname)
     model.load_state_dict(ckpt['model'])
-    optimizer.load_state_dict(ckpt['opt'])
+    if train:
+        optimizer.load_state_dict(ckpt['opt'])
     return ckpt['max_acc']
 
 def testAll(args):
-    create_model(args)
+    dataset, tokenizer = load_data(args)
+    create_model(args, dataset)
     print("> Loading trained model and Test")
     max_acc = load_model(args.model_dump)
     print(f"max_acc: {max_acc}")
-    dataset, tokenizer = load_data(args)
     with torch.no_grad():
         model.eval()
         do_predict(args, dataset["test"])
@@ -290,18 +307,18 @@ if __name__ == '__main__':
         print(device)
         parser = argparse.ArgumentParser()
         parser.add_argument('-dp', '--data_path', type=str, default='../data')
-        parser.add_argument('-e', '--epochs', type=int, default=30)
-        parser.add_argument('-b', '--batch_size', type=int, default=32)
+        parser.add_argument('-e', '--epochs', type=int, default=10)
+        parser.add_argument('-b', '--batch_size', type=int, default=16)
         parser.add_argument('-hn', '--hidden_size', type=int, default=512)
         parser.add_argument('-lr', '--lr_rate', type=float, default=1e-5)
         parser.add_argument('-dr', '--drop_p', type=float, default=0.5)
-        parser.add_argument('-rv', '--reverse', type=int, default=0)
-        parser.add_argument('-md', '--model_dump', type=str, default='./bert_model_ver1.tar')
-        parser.add_argument('-ml', '--model_load', type=str, default=None, help='Print every p iterations')
-        parser.add_argument('-p', '--print_iter', type=int, default=150, help='Print every p iterations')
+        parser.add_argument('-md', '--model_dump', type=str, default='./bert_model_ver3.tar')
+        parser.add_argument('-ml', '--model_load', type=str, default=None, help='Model Load')
+        parser.add_argument('-p', '--print_iter', type=int, default=271, help='Print every p iterations')
         parser.add_argument('-mc', '--max_count', type=int, default=40)
         parser.add_argument('-tr', '--train', type=int, default=1)
+        parser.add_argument('-as', '--gradient_accumulation_steps', type=int, default=1)
         parser.add_argument('-o', '--output_csv', type=str, default="out.csv")
-        parser.add_argument('--max_length', type=int, default=64, help='Max sequence length')
+        parser.add_argument('-l', '--max_length', type=int, default=64, help='Max sequence length')
         args = parser.parse_args()
         main(args)

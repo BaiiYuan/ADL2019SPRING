@@ -199,6 +199,7 @@ def train(args, epoch, dataset, criterion, min_loss, valid_data):
 
         epoch_loss.append((loss_f+loss_b)/2)
 
+        train_loss.append((loss_f, loss_b))
         # acc = (pred.argmax(dim=2) == labels).float().cpu().tolist()
         # epoch_acc.extend(acc)
 
@@ -243,6 +244,7 @@ def valid(args, dataset, criterion):
         loss_b = loss_b.data.cpu().item()/args.batch_size
 
         epoch_loss.append((loss_f+loss_b)/2)
+        valid_loss.append((loss_f, loss_b))
         # acc = (pred.argmax(dim=2) == labels).float().cpu().tolist()
         # epoch_acc.extend(acc)
 
@@ -319,8 +321,12 @@ def loadchkpt(ckptfile):
     return ckpt['min_loss']
 
 def main(args):
+    global train_loss, valid_loss
+    train_loss = []
+    valid_loss = []
     trainIter(args)
-
+    np.save("train_loss.npy", train_loss)
+    np.save("valid_loss.npy", valid_loss)
 
 if __name__ == '__main__':
     with ipdb.launch_ipdb_on_exception():
