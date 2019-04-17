@@ -275,6 +275,10 @@ def testAll(args):
     print("> Loading trained model and Test")
     max_acc = load_model(args.model_dump)
     print(f"max_acc: {max_acc}")
+
+    # criterion = nn.CrossEntropyLoss(ignore_index=0).to(device)
+    # print(valid(args, dataset, criterion))
+
     with torch.no_grad():
         model.eval()
         do_predict(args, dataset["test"])
