@@ -3,6 +3,7 @@ import random
 import pickle
 import numpy as np
 from sys import stdout
+from IPython import embed
 
 from config import rep_len, rec_len, RATE
 
@@ -101,6 +102,30 @@ def load_data(args, word2idx, vectors):
     print(len(dataset['train']))
     return dataset
 
+
+def load_data(args, word2idx, vectors):
+    print("> Load prepro-data...")
+    dataset = {}
+
+    with open(os.path.join(args.data_path, "valid.pkl"), "rb") as f:
+        valid_data = pickle.load(f)
+
+    tmp = []
+    for item in valid_data:
+        valid_out = process_valid_data(item, word2idx)
+        tmp.append(valid_out)
+    dataset['valid'] = tmp
+    print("> Validation data finish")
+
+    with open(os.path.join(args.data_path, "train.pkl"), "rb") as f:
+        train_data = pickle.load(f)
+
+    dataset['train'] = random_sample(train_data, args, word2idx, vectors)
+
+    print("> Training data finish")
+    print(len(dataset['train']))
+    return dataset
+
 def load_test_data(args, word2idx):
     print("> Load prepro-data...")
 
@@ -109,6 +134,49 @@ def load_test_data(args, word2idx):
     test_data = []
     for item in valid_data:
         test_data.append(process_test_data(item, word2idx))
+    print("> Testing data finish")
+
+    return test_data
+
+def load_data_elmo(args, word2idx, vectors):
+    print("> Load prepro-data...")
+    dataset = {}
+    with open(os.path.join(args.data_path, "dict&vectors.pkl"), "rb") as f:
+        [word2idx, vectors] = pickle.load(f)
+
+    idx2word = {i:w for w,i in word2idx.items()}
+    with open(os.path.join(args.data_path, "valid.pkl"), "rb") as f:
+        valid_data = pickle.load(f)
+
+    tmp = []
+    for item in valid_data:
+        valid_out = process_valid_data(item, word2idx)
+        valid_out2 = [[[idx2word[k] for k in j] for j in i] for i in valid_out]
+        tmp.append(valid_out2)
+    dataset['valid'] = tmp
+
+    print("> Validation data finish")
+
+    with open(os.path.join(args.data_path, "train.pkl"), "rb") as f:
+        train_data = pickle.load(f)
+
+    train_data = random_sample(train_data, args, word2idx, vectors)
+
+    dataset['train'] = [[j if cou > 1 else [idx2word[k] for k in j] for cou,j in enumerate(i) ] for i in train_data]
+    print("> Training data finish")
+    print(len(dataset['train']))
+    return dataset
+
+def load_test_data_elmo(args, word2idx):
+    print("> Load prepro-data...")
+
+    with open(os.path.join(args.data_path, "test.pkl"), "rb") as f:
+        valid_data = pickle.load(f)
+    test_data = []
+    for item in valid_data:
+        test_out = process_test_data(item, word2idx)
+        test_out2 = [[[idx2word[k] for k in j] for j in i] for i in test_out]
+        test_data.append(test_out2)
     print("> Testing data finish")
 
     return test_data
