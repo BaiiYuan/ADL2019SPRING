@@ -71,7 +71,11 @@
 
 4. Plot the perplexity score or loss on train/dev set while training. (0.4%)
 
-   
+   ​	Forward:<img src="./plot/Forward.png" width="150%">
+
+   ​	Backward:<img src="./plot/Backward.png" width="150%">
+
+   ​	Mean:<img src="./plot/Mean.png" width="150%">
 
 5. Show the performance of the BCN model with and without ELMo on the public leaderboard. (0.4%)
 
@@ -105,6 +109,10 @@
 
    
 
+   - 93000 iters
+
+   
+
 2. Different hyperparameters. (1%)
 
    The Same Setting:
@@ -133,6 +141,10 @@ You need to report the performance of downstream task (at least the accuracy sco
 
 3. Hyperparameters of your model. (optimization algorithm, learning rate, batch size and other model-specific options)  (0.2%)
 
+   - optimization
+   - learning rate
+   - batch size
+
 
 
 ### Q4: Describe your best model. (1%)
@@ -149,11 +161,13 @@ You need to report the performance of downstream task (at least the accuracy sco
 
    3. Hyperparameters (optimization algorithm, learning rate, batch size and other model-specific options)
 
-      
+      - optimization
+      - learning rate
+      - batch size
 
 3. Describe the reason you think why your best model performs better than other models. (0.5%)
 
-
+   
 
 ### Q5: Compare different input embeddings. (1%)
 
@@ -191,3 +205,7 @@ In this homework, you may encounter models taking inputs in different forms. Ple
    - Please contact TA if you want to try on other interesting tasks.
 
 4. Apply any kind of contextualized embedding method on HW1 and report the performance. (1%)
+
+   I use the ELMo embedding which training on the given corpus on HW1 instead of GloVe.
+
+   
