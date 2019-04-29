@@ -1,0 +1,2 @@
+python run_classifier.py --task_name=hw2  --bert_model=bert-large-uncased --do_lower_case --data_dir=$MY_DATASET --learning_rate=1e-5 --do_eval --max_seq_length=128 --train_batch_size=2 --eval_batch_size=2 --num_train_epochs=2.0 --output_dir=result2_large --gradient_accumulation_steps=2
+python run_classifier.py --task_name=hw2  --bert_model=bert-large-uncased --do_lower_case --data_dir=$MY_DATASET --learning_rate=1e-5 --do_eval --max_seq_length=128 --train_batch_size=2 --eval_batch_size=2 --num_train_epochs=3.0 --output_dir=result3_large --gradient_accumulation_steps=2

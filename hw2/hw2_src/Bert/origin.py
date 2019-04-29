@@ -13,67 +13,15 @@ import numpy as np
 import pandas as pd
 
 from sys import stdout
+from IPython import embed
 from sklearn.model_selection import train_test_split
 from pytorch_pretrained_bert.modeling import BertForSequenceClassification
 from pytorch_pretrained_bert.tokenization import BertTokenizer
-from pytorch_pretrained_bert.optimization import BertAdam
+from pytorch_pretrained_bert.optimization import BertAdam, warmup_linear
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
-
-class InputFeatures(object):
-    def __init__(self, input_ids, input_mask, segment_ids, label_id):
-        self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.label_id = label_id
-
-def convert_examples_to_features(examples, label_list, max_seq_length,
-                                 tokenizer, output_mode="classification"):
-    """Loads a data file into a list of `InputBatch`s."""
-
-    label_map = {label : i for i, label in enumerate(label_list)}
-    features = []
-    for (ex_index, (example_text, example_lable)) in enumerate(examples):
-        tokens_a = tokenizer.tokenize(example_text)
-
-        # Account for [CLS] and [SEP] with "- 2"
-        if len(tokens_a) > max_seq_length - 2:
-            tokens_a = tokens_a[:(max_seq_length - 2)]
-
-        tokens = ["[CLS]"] + tokens_a + ["[SEP]"]
-        segment_ids = [0] * len(tokens)
-
-        input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
-        # The mask has 1 for real tokens and 0 for padding tokens. Only real
-        # tokens are attended to.
-        input_mask = [1] * len(input_ids)
-
-        # Zero-pad up to the sequence length.
-        padding = [0] * (max_seq_length - len(input_ids))
-        input_ids += padding
-        input_mask += padding
-        segment_ids += padding
-
-        assert len(input_ids) == max_seq_length
-        assert len(input_mask) == max_seq_length
-        assert len(segment_ids) == max_seq_length
-
-        if output_mode == "classification":
-            label_id = label_map[example_lable]
-        elif output_mode == "regression":
-            label_id = float(example.label)
-        else:
-            raise KeyError(output_mode)
-
-        features.append(
-            InputFeatures(input_ids=input_ids,
-                          input_mask=input_mask,
-                          segment_ids=segment_ids,
-                          label_id=label_id))
-    return features
-
+BERT = 'bert-large-cased'
 
 def _pad_and_cut(seq, max_leng, pad, array=True):
     if len(seq) < max_leng:
@@ -95,15 +43,12 @@ def process_df(df, tokenizer):
     labels = df.values[:, 2].tolist()
     num = df.shape[0]
 
-    # sents = [tokenizer.tokenize(sent) for sent in sents]
-    # sents = [tokenizer.convert_tokens_to_ids(["[CLS]"]+sent+["[SEP]"]) for sent in sents]
-    # sents = [_pad_and_cut(sent, args.max_length, 0) for sent in sents]
-    # return [(sents[i], int(labels[i]-1)) for i in range(num)]
+    sents = [tokenizer.tokenize(sent) for sent in sents]
+    sents = [tokenizer.convert_tokens_to_ids(sent) for sent in sents]
+    sents = [_pad_and_cut(sent, args.max_length, 0) for sent in sents]
 
-    return convert_examples_to_features(examples=df.values[:, 1:].tolist(),
-                                        label_list=[1,2,3,4,5,0],
-                                        max_seq_length=args.max_length,
-                                        tokenizer=tokenizer)
+    return [(sents[i], int(labels[i]-1)) for i in range(num)]
+
 
 def load_data(args):
     print("[*] Loading data...")
@@ -116,19 +61,8 @@ def load_data(args):
     train_data = process_df(df_train, tokenizer)
     valid_data = process_df(df_dev, tokenizer)
 
-    # dataset["train"], dataset["dev"] = train_data, valid_data
-    dataset["train"], dataset["dev"] = train_test_split(train_data+valid_data, test_size=1100)
-
+    dataset["train"], dataset["dev"] = train_data, valid_data # train_test_split(train_data+valid_data, test_size=0.1)
     print(len(dataset["train"]), len(dataset["dev"]))
-    dataset["test"] = process_df(df_test, tokenizer)
-
-    return dataset, tokenizer
-
-def load_test_data(args):
-    print("[*] Loading data...")
-    dataset = {}
-    tokenizer = BertTokenizer.from_pretrained(BERT, do_lower_case=False, do_basic_tokenize=True)
-    df_test = pd.read_csv(args.test_path)
     dataset["test"] = process_df(df_test, tokenizer)
 
     return dataset, tokenizer
@@ -151,12 +85,12 @@ def data_generator(args, data, batch_size_origin, shuffle=True):
 
         batch_data = np.array(used_data[start:end])
 
-        input_data = torch.tensor([f.input_ids for f in batch_data], dtype=torch.long)
-        input_mask = torch.tensor([f.input_mask for f in batch_data], dtype=torch.long)
-        segment_ids = torch.tensor([f.segment_ids for f in batch_data], dtype=torch.long)
-        labels = torch.tensor([f.label_id for f in batch_data], dtype=torch.long)
+        input_data, labels = zip(*batch_data)
 
-        yield input_data.to(device), input_mask.to(device), segment_ids.to(device), labels.to(device)
+        input_data = torch.tensor(input_data, dtype=torch.long)
+        labels = torch.tensor(labels, dtype=torch.long)
+
+        yield input_data.to(device), labels.to(device)
 
 def valid_data_generator(args, data, batch_size_origin, shuffle=True):
     if shuffle:
@@ -174,12 +108,12 @@ def valid_data_generator(args, data, batch_size_origin, shuffle=True):
 
         batch_data = np.array(used_data[start:end])
 
-        input_data = torch.tensor([f.input_ids for f in batch_data], dtype=torch.long)
-        input_mask = torch.tensor([f.input_mask for f in batch_data], dtype=torch.long)
-        segment_ids = torch.tensor([f.segment_ids for f in batch_data], dtype=torch.long)
-        labels = torch.tensor([f.label_id for f in batch_data], dtype=torch.long)
+        input_data, labels = zip(*batch_data)
 
-        yield input_data.to(device), input_mask.to(device), segment_ids.to(device), labels.to(device)
+        input_data = torch.tensor(input_data, dtype=torch.long)
+        labels = torch.tensor(labels, dtype=torch.long)
+
+        yield input_data.to(device), labels.to(device)
 
 def train(args, epoch, dataset, criterion, max_acc):
     print("\n------------------------------------------")
@@ -190,10 +124,11 @@ def train(args, epoch, dataset, criterion, max_acc):
     epoch_acc = []
     model.train(True)
 
-    for idx, (input_data, input_mask, segment_ids, labels) in enumerate(gen):
+    for idx, (input_data, labels) in enumerate(gen):
         # Forward and backward.
         optimizer.zero_grad()
-        pred = model(input_data, segment_ids, input_mask)
+        pred = model(input_data)
+
         loss = criterion(pred, labels)
         loss.backward()
         optimizer.step()
@@ -234,8 +169,8 @@ def valid(args, dataset, criterion):
     t1 = time.time()
     epoch_loss = []
     epoch_acc = []
-    for idx, (input_data, input_mask, segment_ids, labels) in enumerate(gen):
-        pred = model(input_data, segment_ids, input_mask)
+    for idx, (input_data, labels) in enumerate(gen):
+        pred = model(input_data)
         loss = criterion(pred, labels)
 
         loss = loss.data.cpu().item()
@@ -277,12 +212,11 @@ def trainInit(args):
 
     return dataset, tokenizer, criterion, max_acc
 
-def create_model(args, dataset, train=True):
+def create_model(args, dataset):
     print("[*] Create model.")
 
     global model
     model = BertForSequenceClassification.from_pretrained(BERT, num_labels=5)
-    model.dropout = nn.Dropout(args.drop_p)
     # for i in model.bert.named_parameters():
     #     i[1].requires_grad=False
 
@@ -297,14 +231,15 @@ def create_model(args, dataset, train=True):
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
     ]
 
-    if train:
-        num_train_optimization_steps = int(
-                len(dataset["train"]) / args.batch_size / args.gradient_accumulation_steps) * args.epochs
-        global optimizer
-        optimizer = BertAdam(optimizer_grouped_parameters,
-                             lr=args.lr_rate,
-                             warmup=0.1,
-                             t_total=num_train_optimization_steps)
+    num_train_optimization_steps = int(
+            len(dataset["train"]) / args.batch_size / args.gradient_accumulation_steps) * args.epochs
+
+    global optimizer
+
+    optimizer = BertAdam(optimizer_grouped_parameters,
+                         lr=args.lr_rate,
+                         warmup=0.1,
+                         t_total=num_train_optimization_steps)
 
     # optimizer = optim.Adam(model.parameters(),
     #                        lr=args.lr_rate) # , betas=(0.9, 0.999), weight_decay=1e-3)
@@ -328,11 +263,11 @@ def load_model(ckptname, train=False):
     return ckpt['max_acc']
 
 def testAll(args):
-    dataset, tokenizer = load_test_data(args)
-    create_model(args, dataset, train=False)
+    dataset, tokenizer = load_data(args)
+    create_model(args, dataset)
     print("> Loading trained model and Test")
     max_acc = load_model(args.model_dump)
-    print("max_acc: {}".format(max_acc))
+    print(f"max_acc: {max_acc}")
 
     # criterion = nn.CrossEntropyLoss(ignore_index=0).to(device)
     # print(valid(args, dataset, criterion))
@@ -344,8 +279,8 @@ def testAll(args):
 def do_predict(args, test_data):
     write = []
     gen = valid_data_generator(args, test_data, args.batch_size, shuffle=False)
-    for idx, (input_data, input_mask, segment_ids, labels) in enumerate(gen):
-        pred = model(input_data, segment_ids, input_mask)
+    for idx, (input_data, labels) in enumerate(gen):
+        pred = model(input_data)
 
         out = pred.argmax(dim=1).detach().cpu().numpy().tolist()
         write.extend(out)
@@ -362,13 +297,11 @@ def main(args):
     testAll(args)
 
 if __name__ == '__main__':
-    global BERT
     with ipdb.launch_ipdb_on_exception():
         sys.breakpointhook = ipdb.set_trace
         print(device)
         parser = argparse.ArgumentParser()
         parser.add_argument('-dp', '--data_path', type=str, default='../data')
-        parser.add_argument('-tp', '--test_path', type=str, default='../data/test.csv')
         parser.add_argument('-e', '--epochs', type=int, default=10)
         parser.add_argument('-b', '--batch_size', type=int, default=16)
         parser.add_argument('-hn', '--hidden_size', type=int, default=512)
@@ -382,7 +315,5 @@ if __name__ == '__main__':
         parser.add_argument('-as', '--gradient_accumulation_steps', type=int, default=1)
         parser.add_argument('-o', '--output_csv', type=str, default="out.csv")
         parser.add_argument('-l', '--max_length', type=int, default=64, help='Max sequence length')
-        parser.add_argument('-bert', '--bert_type', type=str, default='bert-large-uncased', help='Max sequence length')
         args = parser.parse_args()
-        BERT = args.bert_type
         main(args)

@@ -6,26 +6,29 @@ from torch import nn
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 from torch.nn.utils.rnn import pack_padded_sequence as pack
 import torch.utils.model_zoo as model_zoo
-from pytorch_pretrained_bert import BertTokenizer, BertModel
-from pytorch_pretrained_bert import OpenAIGPTTokenizer, OpenAIGPTModel
+from allennlp.modules.elmo import Elmo, batch_to_ids
+
+# options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json"
+# weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5"
+
+options_file = "~/.allennlp/elmo_2x4096_512_2048cnn_2xhighway_options.json"
+weight_file = "~/.allennlp/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5"
+
+from allennlp.commands.elmo import ElmoEmbedder
+
+
 from IPython import embed
 
 import ELMo.elmo_models as elmo_models
 
 import os
 
-model_urls = {
-    'wmt-lstm' : 'https://s3.amazonaws.com/research.metamind.io/cove/wmtlstm-b142a7f2.pth'
-}
-
-model_cache = os.path.join(os.path.dirname(os.path.realpath(__file__)), '.torch')
-
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
 data_path = "./data"
 
 
-class Embedder: # OpenAIGPTModel
+class Embedder:
     """
     The class responsible for loading a pre-trained ELMo model and provide the ``embed``
     functionality for downstream BCN model.
@@ -42,23 +45,18 @@ class Embedder: # OpenAIGPTModel
         self.n_ctx_embs = n_ctx_embs
         self.ctx_emb_dim = ctx_emb_dim
         # TODO
-        with open(os.path.join(data_path, "word2idx-vectors.pkl"), "rb") as f:
-            word2idx, vectors = pickle.load(f)
 
-        self.tokenizer = OpenAIGPTTokenizer.from_pretrained('openai-gpt')
-        self.model = OpenAIGPTModel.from_pretrained('openai-gpt')
-        self.model.eval()
-        self.model.to(device)
-
+        # self.elmo = ElmoEmbedder()
+        self.elmo = Elmo(options_file, weight_file, 2, dropout=0)
 
 
     def get_embedding(self, senten, max_sent_len):
         if len(senten) < max_sent_len:
-            senten = ["<pad>"]*(max_sent_len-len(senten)) + senten
+            senten = senten + ["<PAD>"]*(max_sent_len-len(senten))
         else:
             senten = senten[:max_sent_len]
-
-        return [np.array(self.vectors[self.word2idx.get(w, 1)]) for w in senten]
+        senten = ["<S>"] + senten + ["</S>"]
+        return senten
 
     def __call__(self, sentences, max_sent_len):
         """
@@ -84,12 +82,16 @@ class Embedder: # OpenAIGPTModel
         # TODO
         batch_size = len(sentences)
         output_len = min(max(map(len, sentences)), max_sent_len)
-        embed()
 
-        return output
+        output = [self.get_embedding(senten, output_len) for senten in sentences]
+        output = batch_to_ids(output)
+        output = self.elmo(output)['elmo_representations']
+        output = np.concatenate([i[:, 1:-1].reshape(batch_size, output_len, 1, 1024).detach().cpu().numpy() for i in output], axis=2)
+        # embed()
+        return np.array(output)
 
 
-class origin_good_Elmo_Embedder: # ELMO
+class __Embedder: # ELMO
     """
     The class responsible for loading a pre-trained ELMo model and provide the ``embed``
     functionality for downstream BCN model.
@@ -106,7 +108,7 @@ class origin_good_Elmo_Embedder: # ELMO
         self.n_ctx_embs = n_ctx_embs
         self.ctx_emb_dim = ctx_emb_dim
 
-        model_name = "ELMo/elmo_model_adap_big.tar"
+        model_name = "ELMo/elmo_model_adap_93000.tar"
         # TODO
         model = elmo_models.elmo_model(input_size=512,
                                        hidden_size=512,

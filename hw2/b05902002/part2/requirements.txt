@@ -1,0 +1,7 @@
+ipdb==0.12
+numpy==1.16.1
+pandas==0.24.1
+pytorch-pretrained-bert==0.6.1
+torch
+tqdm==4.28.1
+scikit-learn==0.20.1

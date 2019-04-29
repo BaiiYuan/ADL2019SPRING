@@ -26,7 +26,7 @@ class Embedder: # ELMO
         self.n_ctx_embs = n_ctx_embs
         self.ctx_emb_dim = ctx_emb_dim
 
-        model_name = "ELMo/elmo_model_adap_58000.tar"
+        model_name = "elmo_model_adap_93000.tar"
         # TODO
         model = elmo_models.elmo_model(input_size=512,
                                        hidden_size=512,
@@ -101,12 +101,9 @@ class Embedder: # ELMO
 
             input_data.append([self.sos]+pad_out+[self.eos])
 
-
-
         input_data = torch.tensor(input_data, dtype=torch.int64)
         input_data = input_data.to(device)
         embedding = self.elmo.get_contexulize_embedding(input_data)
         embedding = [item.detach().cpu().numpy().reshape(batch_size, output_len, 1, -1) for item in embedding]
         encoded_layers = np.concatenate(embedding, axis=2)
         return encoded_layers
-        # return np.empty( (len(sentences), min(max(map(len, sentences)), max_sent_len), 0), dtype=np.float32)

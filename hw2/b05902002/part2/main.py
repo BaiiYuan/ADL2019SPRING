@@ -14,9 +14,10 @@ import pandas as pd
 
 from sys import stdout
 from sklearn.model_selection import train_test_split
-from pytorch_pretrained_bert.modeling import BertForSequenceClassification
+from pytorch_pretrained_bert.modeling import BertForSequenceClassification, BertConfig
 from pytorch_pretrained_bert.tokenization import BertTokenizer
 from pytorch_pretrained_bert.optimization import BertAdam
+from IPython import embed
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
@@ -108,7 +109,7 @@ def process_df(df, tokenizer):
 def load_data(args):
     print("[*] Loading data...")
     dataset = {}
-    tokenizer = BertTokenizer.from_pretrained(BERT, do_lower_case=False, do_basic_tokenize=True)
+    tokenizer = BertTokenizer.from_pretrained(BERT, do_lower_case=False, do_basic_tokenize=True, cache_dir="pytorch_pretrained_bert")
     df_train = pd.read_csv(os.path.join(args.data_path, "train.csv"))
     df_dev = pd.read_csv(os.path.join(args.data_path, "dev.csv"))
     df_test = pd.read_csv(os.path.join(args.data_path, "test.csv"))
@@ -127,7 +128,7 @@ def load_data(args):
 def load_test_data(args):
     print("[*] Loading data...")
     dataset = {}
-    tokenizer = BertTokenizer.from_pretrained(BERT, do_lower_case=False, do_basic_tokenize=True)
+    tokenizer = BertTokenizer.from_pretrained(BERT, do_lower_case=False, do_basic_tokenize=True, cache_dir="pytorch_pretrained_bert")
     df_test = pd.read_csv(args.test_path)
     dataset["test"] = process_df(df_test, tokenizer)
 
@@ -281,8 +282,14 @@ def create_model(args, dataset, train=True):
     print("[*] Create model.")
 
     global model
-    model = BertForSequenceClassification.from_pretrained(BERT, num_labels=5)
-    model.dropout = nn.Dropout(args.drop_p)
+    if train:
+        model = BertForSequenceClassification.from_pretrained(BERT, num_labels=5)
+    else:
+        if BERT == 'bert-large-uncased':
+            config = BertConfig.from_json_file("uncase_model")
+        else:
+            config = BertConfig.from_json_file("case_model")
+        model = BertForSequenceClassification(config, num_labels=5)
     # for i in model.bert.named_parameters():
     #     i[1].requires_grad=False
 
@@ -382,7 +389,7 @@ if __name__ == '__main__':
         parser.add_argument('-as', '--gradient_accumulation_steps', type=int, default=1)
         parser.add_argument('-o', '--output_csv', type=str, default="out.csv")
         parser.add_argument('-l', '--max_length', type=int, default=64, help='Max sequence length')
-        parser.add_argument('-bert', '--bert_type', type=str, default='bert-large-uncased', help='Max sequence length')
+        parser.add_argument('-bert', '--bert_type', type=str, default='bert-large-uncased', help='Select Bert Type')
         args = parser.parse_args()
         BERT = args.bert_type
         main(args)
