@@ -103,11 +103,11 @@ class AgentDQN(Agent):
 
         # training hyperparameters
         self.train_freq = 4 # frequency to train the online network
-        self.learning_start = 1000 # before we start to update our network, we wait a few steps first to fill the replay.
+        self.learning_start = 10000 # before we start to update our network, we wait a few steps first to fill the replay.
         self.batch_size = args.batch_size
         self.num_timesteps = 3000000 # total training steps
         self.display_freq = 10 # frequency to display training progress
-        self.save_freq = 200000 # frequency to save the model
+        self.save_freq = 50000 # frequency to save the model
         self.target_update_freq = 1000 # frequency to update target network
 
         # optimizer

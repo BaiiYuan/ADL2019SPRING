@@ -8,6 +8,8 @@ from agent_dir.agent import Agent
 from environment import Environment
 from IPython import embed
 
+use_cuda = torch.cuda.is_available()
+
 class PolicyNet(nn.Module):
     def __init__(self, state_dim, action_num, hidden_dim, drop_p):
         super(PolicyNet, self).__init__()
