@@ -10,7 +10,10 @@ from a2c.actor_critic import ActorCritic
 from collections import deque
 import os
 
+from IPython import embed
+
 use_cuda = torch.cuda.is_available()
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class AgentMario:
     def __init__(self, env, args):
@@ -29,14 +32,14 @@ class AgentMario:
         #######################    NOTE: You need to implement
         self.recurrent = True # <- ActorCritic._forward_rnn()
         #######################    Please check a2c/actor_critic.py
-        
+
         self.display_freq = 4000
         self.save_freq = 100000
         self.save_dir = './checkpoints/'
 
         torch.manual_seed(self.seed)
         torch.cuda.manual_seed_all(self.seed)
-        
+
         self.envs = env
         if self.envs == None:
             self.envs = make_vec_envs('SuperMarioBros-v0', self.seed,
@@ -47,61 +50,76 @@ class AgentMario:
         self.act_shape = self.envs.action_space.n
 
         self.rollouts = RolloutStorage(self.update_freq, self.n_processes,
-                self.obs_shape, self.act_shape, self.hidden_size) 
+                self.obs_shape, self.act_shape, self.hidden_size)
         self.model = ActorCritic(self.obs_shape, self.act_shape,
                 self.hidden_size, self.recurrent).to(self.device)
-        self.optimizer = RMSprop(self.model.parameters(), lr=self.lr, 
+        self.optimizer = RMSprop(self.model.parameters(), lr=self.lr,
                 eps=1e-5)
 
         self.hidden = None
         self.init_game_setting()
-   
+
     def _update(self):
         # TODO: Compute returns
         # R_t = reward_t + gamma * R_{t+1}
+        embed()
+        # running_add = next_value[-1]
+        actions, policies, values, returns, advantages = process_rollout(args, steps, cuda)
+        for step in range(self.update_freq):
 
         # TODO:
         # Compute actor critic loss (value_loss, action_loss)
         # OPTIONAL: You can also maxmize entropy to encourage exploration
         # loss = value_loss + action_loss (- entropy_weight * entropy)
 
+        loss = actor_loss.mean() + 0.5 * critic_loss - self.entropy_weight * entropy.mean()
+
         # Update
         self.optimizer.zero_grad()
         loss.backward()
         clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
-        
+
         # TODO:
         # Clear rollouts after update (RolloutStorage.reset())
+        self.rollouts.reset()
 
         return loss.item()
 
     def _step(self, obs, hiddens, masks):
         with torch.no_grad():
-            pass
             # TODO:
             # Sample actions from the output distributions
             # HINT: you can use torch.distributions.Categorical
+            values, action_probs, hiddens = self.model(obs, hiddens, masks)
+            m = Categorical(action_probs)
+            actions = m.sample()
 
         obs, rewards, dones, infos = self.envs.step(actions.cpu().numpy())
-        
+
         # TODO:
         # Store transitions (obs, hiddens, actions, values, rewards, masks)
         # You need to convert arrays to tensors first
         # HINT: masks = (1 - dones)
-        
+        obs = torch.Tensor(obs)
+        rewards = torch.Tensor(rewards)
+        masks = torch.Tensor(1-dones)
+        self.rollouts.insert(obs, hiddens, actions.unsqueeze(1), values,
+                             rewards.unsqueeze(1), masks.unsqueeze(1))
+
+
     def train(self):
 
         print('Start training')
         running_reward = deque(maxlen=10)
         episode_rewards = torch.zeros(self.n_processes, 1).to(self.device)
         total_steps = 0
-        
+
         # Store first observation
         obs = torch.from_numpy(self.envs.reset()).to(self.device)
         self.rollouts.obs[0].copy_(obs)
         self.rollouts.to(self.device)
-        
+
         while True:
             # Update once every n-steps
             for step in range(self.update_freq):
@@ -129,10 +147,10 @@ class AgentMario:
             if total_steps % self.display_freq == 0:
                 print('Steps: %d/%d | Avg reward: %f'%
                         (total_steps, self.max_steps, avg_reward))
-            
+
             if total_steps % self.save_freq == 0:
                 self.save_model('model.pt')
-            
+
             if total_steps >= self.max_steps:
                 break
 
@@ -148,4 +166,17 @@ class AgentMario:
 
     def make_action(self, observation, test=False):
         # TODO: Use you model to choose an action
+        embed()
+
+        # state = torch.from_numpy(state).float().unsqueeze(0)
+        # state = state.cuda() if use_cuda else state
+        # self.model(state)
+        # probs = self.model(state)
+        # m = Categorical(probs)
+        # action = m.sample()
+
+        # self.model.saved_log_probs.append(m.log_prob(action))
+        # self.saved_actions.append(m.log_prob(action))
+
+        return action.item()
         return action

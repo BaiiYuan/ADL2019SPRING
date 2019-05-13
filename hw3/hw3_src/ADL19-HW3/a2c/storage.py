@@ -39,3 +39,27 @@ class RolloutStorage:
         self.hiddens[0].copy_(self.hiddens[-1])
         self.masks[0].copy_(self.masks[-1])
 
+    def process_rollout(self):
+        _, _, _, _, last_values = steps[-1]
+        returns = last_values.data
+
+        advantages = torch.zeros(args.num_workers, 1)
+        if cuda: advantages = advantages.cuda()
+
+        out = [None] * (self.n_steps - 1)
+
+        # run Generalized Advantage Estimation, calculate returns, advantages
+        for t in reversed(range(self.n_steps - 1)):
+            rewards, masks, actions, policies, values = steps[t]
+            _, _, _, _, next_values = steps[t + 1]
+
+            returns = rewards + returns * args.gamma * masks
+
+            deltas = rewards + next_values.data * args.gamma * masks - values.data
+            advantages = advantages * args.gamma * args.lambd * masks + deltas
+
+            out[t] = actions, policies, values, returns, advantages
+
+        # return data as batched Tensors, Variables
+        return map(lambda x: torch.cat(x, 0), zip(*out))
+        return self.actions, policies, values, returns, advantages
