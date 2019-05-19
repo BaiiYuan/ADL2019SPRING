@@ -10,7 +10,7 @@ from a2c.actor_critic import ActorCritic
 from collections import deque
 import os
 
-from IPython import embed
+# from IPython import embed
 
 use_cuda = torch.cuda.is_available()
 device = "cuda" if torch.cuda.is_available() else "cpu"

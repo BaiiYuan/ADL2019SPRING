@@ -4,8 +4,7 @@
 You DO NOT need to upload this file
 
 """
-import sys
-import ipdb
+
 import argparse
 from test import test
 from environment import Environment
@@ -22,6 +21,7 @@ def parse():
     parser.add_argument('--test_mario', action='store_true', help='whether test mario')
     parser.add_argument('--video_dir', default=None, help='output video directory')
     parser.add_argument('--do_render', action='store_true', help='whether render environment')
+
     try:
         from argument import add_arguments
         parser = add_arguments(parser)
@@ -70,7 +70,5 @@ def run(args):
         test(agent, env, total_episodes=10)
 
 if __name__ == '__main__':
-    with ipdb.launch_ipdb_on_exception():
-        sys.breakpointhook = ipdb.set_trace
-        args = parse()
-        run(args)
+    args = parse()
+    run(args)

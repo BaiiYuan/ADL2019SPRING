@@ -8,7 +8,7 @@ import torch.nn as nn
 
 from agent_dir.agent import Agent
 from environment import Environment
-from IPython import embed
+# from IPython import embed
 from collections import namedtuple
 
 use_cuda = torch.cuda.is_available()
