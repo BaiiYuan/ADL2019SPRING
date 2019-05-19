@@ -9,6 +9,7 @@ from environment import Environment
 from IPython import embed
 
 use_cuda = torch.cuda.is_available()
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class PolicyNet(nn.Module):
     def __init__(self, state_dim, action_num, hidden_dim, drop_p):
@@ -35,6 +36,7 @@ class AgentPG(Agent):
                                action_num= self.env.action_space.n,
                                hidden_dim=args.hidden,
                                drop_p=args.drop_p)
+        self.model = self.model.cuda() if use_cuda else self.model
         self.gamma = args.gamma
 
         if args.test_pg:
@@ -108,6 +110,7 @@ class AgentPG(Agent):
         del self.model.saved_log_probs[:]
 
     def train(self):
+        self.train_reward = []
         avg_reward = None # moving average of reward
         for epoch in range(self.num_episodes):
             state = self.env.reset()
@@ -124,8 +127,10 @@ class AgentPG(Agent):
             last_reward = np.sum(self.rewards)
             avg_reward = last_reward if not avg_reward else avg_reward * 0.9 + last_reward * 0.1
 
-            # update model
+            # for plotting learning curve
+            self.train_reward.append(last_reward)
 
+            # update model
             self.update()
 
             print('\rEpochs: %d/%d | Avg reward: %f '%
@@ -136,3 +141,18 @@ class AgentPG(Agent):
             if avg_reward > 100: # to pass baseline, avg. reward > 50 is enough.
                 self.save('pg.cpt')
                 break
+
+        self.plot_learning_curve()
+
+    def plot_learning_curve(self):
+        import matplotlib.pyplot as plt
+        train_x = list(range(1, len(self.train_reward)+1))
+        plt.figure(figsize=(20,10))
+        plt.plot(train_x, self.train_reward, '-', label='train')
+
+        plt.title("Learning Curves of Policy Gradient")
+        plt.xlabel("Episodes")
+        plt.ylabel("Reward")
+
+        plt.legend()
+        plt.savefig("pg.png")

@@ -144,20 +144,21 @@ class AgentDQN(Agent):
             action = self.online_net(state).max(1)[1].view(1, 1)
             return action[0, 0].data.item()
 
+        # TODO:
+        explore = (sample > eps_threshold)
         sample = random.random()
         eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.steps / EPS_DECAY)
-
-        # TODO:
         # if explore, you randomly samples one action
         # else, use your model to predict action
-        if sample > eps_threshold:
+        if explore:
             with torch.no_grad():
+                action = self.online_net(state).max(1)[1].view(1, 1)
                 # t.max(1) will return largest column value of each row.
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
-                action = self.online_net(state).max(1)[1].view(1, 1)
         else:
             action = torch.tensor([[random.randrange(self.num_actions)]], device=device, dtype=torch.long)
+
         return action[0, 0].data.item()
 
     def update(self):
@@ -238,6 +239,7 @@ class AgentDQN(Agent):
                     self.save('dqn')
 
                 self.steps += 1
+
             print('\rEpisode: %d | Steps: %d/%d | Avg reward: %f | loss: %f'%
                     (episodes_done_num, self.steps, self.num_timesteps, total_reward / self.display_freq, loss), end="")
             if episodes_done_num % self.display_freq == 0:
