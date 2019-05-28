@@ -17,7 +17,7 @@ def main(args):
 
     trainer = GANtrainer(args)
     trainer.init_model()
-    trainer.gen_output()
+    trainer.gen_output(iters=40)
 
 
 if __name__ == '__main__':

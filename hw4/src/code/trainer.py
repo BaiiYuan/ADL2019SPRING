@@ -249,5 +249,6 @@ class GANtrainer(object):
                     out = self.netG(fixed_noise, label)
                     vutils.save_image(self.denorm(out.data), f'test_output/{count}.png')
                     count+=1
-
+                    if count > 5000:
+                        exit()
 
