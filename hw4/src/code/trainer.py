@@ -5,8 +5,6 @@ import itertools
 
 import torch
 import torch.nn as nn
-# import torch.nn.parallel
-# import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data
 import torch.autograd as autograd
@@ -17,22 +15,22 @@ import torchvision.utils as vutils
 import numpy as np
 import matplotlib.pyplot as plt
 from IPython import embed
-# import matplotlib.animation as animation
-# from IPython.display import HTML
 
 from argument import USE_CUDA, device
 from models import Generator, Discriminator
+# from model_land import Generator, Discriminator
 
 class GANtrainer(object):
     def __init__(self, args):
         super(GANtrainer, self).__init__()
-        self.dataroot = "./data/selected_cartoonset100k"
-        self.outroot = "./out"
-        self.modelroot = "./model"
+        # self.dataroot = "./data/selected_cartoonset100k"
+        # self.outroot = "./out"
+        self.output_dir = args.output_dir
+        self.modelroot = args.model_saved_path
         self.model_load = "./model/models_ep65.tar"
         self.workers = 2
-        self.batch_size = 16
-        self.image_size = 64
+        self.batch_size = args.batch_size
+        self.image_size = 128
         self.n_class = 15
         self.LAMBDA = 10
 
@@ -45,6 +43,9 @@ class GANtrainer(object):
         self.beta1 = 0.5 # Beta1 hyperparam for Adam optimizers
         self.ngpu = 1  # Number of GPUs available. Use 0 for CPU mode.
 
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+
     def generating_conditions(self):
         num_feat = [6, 4, 3, 2]
         combin = None
@@ -54,6 +55,16 @@ class GANtrainer(object):
                 combin = [a+b for a,b in combin]
             else:
                 combin = np.eye(n).tolist()
+        self.combin = combin
+
+    def loading_conditions(self, filename):
+        combin = []
+        with open(filename, "r") as f:
+            for c, line in enumerate(f):
+                if c <= 1:
+                    continue
+                combin.append(np.array(line.split()).astype(float))
+        print("Output Length: {}".format(len(combin)))
         self.combin = combin
 
     def plot_test(self):
@@ -97,15 +108,12 @@ class GANtrainer(object):
             os.makedirs('images/fake')
         if not os.path.exists('images/real'):
             os.makedirs('images/real')
-        if not os.path.exists('test_output'):
-            os.makedirs('test_output')
+        if not os.path.exists('self.modelroot'):
+            os.makedirs('self.modelroot')
+
 
     def denorm(self, x):
         return x * 0.5 + 0.5
-
-    def save_models(self, epoch):
-        torch.save(self.netG.state_dict(), '%s/netG_epoch_%d.pth'.format(self.modelroot, epoch))
-        torch.save(self.netD.state_dict(), '%s/netD_epoch_%d.pth'.format(self.modelroot, epoch))
 
     def save_model(self, epoch):
         torch.save({
@@ -206,7 +214,7 @@ class GANtrainer(object):
                 self.optimizerG.step()
                 D_G_z2 = fake_pred.data.mean()
 
-                # # Output training stats
+                # Output training stats
                 if i % 3000 == 0:
                     print("")
                 print('\r [{}/{}][{}/{}] Loss_D: {:.4f} Loss_G: {:.4f} D(x): {:.4f} D(G(z)): {:.4f} / {:.4f}, Accuracy: {}/{} = {:.2f}%'.format(
@@ -218,12 +226,6 @@ class GANtrainer(object):
                 self.G_losses.append(g_loss.data)
                 self.D_losses.append(d_loss.data)
 
-                # Check how the generator is doing by saving G's output on fixed_noise
-                # if (iters % 500 == 0) or ((epoch == self.num_epochs-1) and (i >= len(self.dataloader)-3)):
-                #     with torch.no_grad():
-                #         fake = self.netG(self.fixed_noise).detach().cpu()
-                #     self.img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
-
                 iters += 1
 
             vutils.save_image(self.denorm(fake_input.data), f'images/fake/fake_{epoch:03d}.jpg')
@@ -232,9 +234,11 @@ class GANtrainer(object):
             if (epoch+1) % 5 == 0:
                 self.save_model(epoch+1)
 
-    def gen_output(self, iters=5):
+    def gen_output(self, filename, iters=1):
         self.load_model(self.model_load)
-        self.generating_conditions()
+        # self.generating_conditions()
+        if args.filename is not None:
+            self.loading_conditions(filename=filename)
         output_image = []
         count = 0
         with torch.no_grad():
@@ -244,8 +248,5 @@ class GANtrainer(object):
                     fixed_noise = torch.randn(1, self.nz, device=device)
                     label = Variable(torch.Tensor(label)).float().unsqueeze(0).to(device)
                     out = self.netG(fixed_noise, label)
-                    vutils.save_image(self.denorm(out.data), f'test_output/{count}.png')
+                    vutils.save_image(self.denorm(out.data), os.path.join(self.output_dir, f'{count}.png'))
                     count+=1
-                    if count >= 5000:
-                        exit()
-
