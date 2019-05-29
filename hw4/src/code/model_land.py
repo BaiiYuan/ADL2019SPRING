@@ -21,29 +21,21 @@ class Generator(nn.Module):
         self.proj = nn.Linear(nz, ngf*4*4)
         self.label_proj = nn.Linear(15, ngf*8)
 
-        self.conv1 = nn.Sequential(
-            nn.ConvTranspose2d(ngf, ngf*8, 4, 2, 1),
-            nn.BatchNorm2d(ngf*8),
-            nn.ReLU(True),
-        )
-        self.conv2 = nn.Sequential(
-            nn.ConvTranspose2d(ngf*8*2, ngf*4, 4, 2, 1),
-            nn.BatchNorm2d(ngf*4),
-            nn.ReLU(True),
-        )
-        self.conv3 = nn.Sequential(
-            nn.ConvTranspose2d(ngf*4, ngf*2, 4, 2, 1),
-            nn.BatchNorm2d(ngf*2),
-            nn.ReLU(True),
-        )
-        self.conv4 = nn.Sequential(
-            nn.ConvTranspose2d(ngf*2, ngf*1, 4, 2, 1),
-            nn.BatchNorm2d(ngf*1),
-            nn.ReLU(True),
-        )
+        self.conv1 = nn.ConvTranspose2d(ngf, ngf*8, 4, 2, 1)
+        self.bn1 = nn.BatchNorm2d(ngf*8)
+
+        self.conv2 = nn.ConvTranspose2d(ngf*8*2, ngf*4, 4, 2, 1)
+        self.bn2 = nn.BatchNorm2d(ngf*4)
+
+        self.conv3 = nn.ConvTranspose2d(ngf*4, ngf*2, 4, 2, 1)
+        self.bn3 = nn.BatchNorm2d(ngf*2)
+
+        self.conv4 = nn.ConvTranspose2d(ngf*2, ngf*1, 4, 2, 1)
+        self.bn4 = nn.BatchNorm2d(ngf*1)
 
         self.conv5 = nn.ConvTranspose2d(ngf*1, nc, 4, 2, 1)
 
+        self.relu = nn.ReLU(True)
         self.tanh = nn.Tanh()
 
         self.apply(weights_init)
@@ -51,20 +43,32 @@ class Generator(nn.Module):
 
     def forward(self, input, label):
         batch_size = input.size(0)
-
         x = self.proj(input)
         x = x.view(batch_size, -1, 4, 4)
         label = self.label_proj(label)
+
         label = label.unsqueeze(2).expand(batch_size, self.ngf*8, 64).view(batch_size, self.ngf*8, 8, 8)
 
         x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
         x = torch.cat([x, label], dim=1)
+
         x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+
         x = self.conv3(x)
+        x = self.bn3(x)
+        x = self.relu(x)
+
         x = self.conv4(x)
+        x = self.bn4(x)
+        x = self.relu(x)
+
         x = self.conv5(x)
         output = self.tanh(x)
-
         return output
 
 class Discriminator(nn.Module):
@@ -79,17 +83,19 @@ class Discriminator(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-        )
+         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
         )
+
         self.conv3 = nn.Sequential(
             nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 4),
             nn.LeakyReLU(0.2, inplace=True),
         )
+
         self.conv4 = nn.Sequential(
             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 8),
@@ -110,7 +116,6 @@ class Discriminator(nn.Module):
 
     def forward(self, input, label):
         batch_size = input.size(0)
-
         label = self.label_proj(label)
         label = label.unsqueeze(2).expand(batch_size, self.ndf*8, 64).view(batch_size, self.ndf*8, 8, 8)
 
@@ -118,14 +123,15 @@ class Discriminator(nn.Module):
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.conv4(x)
+
         x = torch.cat([x, label], dim=1)
         x = self.conv5(x)
 
         x = x.view(batch_size, -1)
         x = self.proj(x)
+
         s = self.gan_linear(x)
         c = self.aux_linear(x)
-
         return s.squeeze(1), c
 
 if __name__ == '__main__':

@@ -20,9 +20,7 @@ from IPython import embed
 # import matplotlib.animation as animation
 # from IPython.display import HTML
 
-USE_CUDA = torch.cuda.is_available()
-device = torch.device("cuda" if USE_CUDA else "cpu")
-
+from argument import USE_CUDA, device
 from models import Generator, Discriminator
 
 class GANtrainer(object):
@@ -31,9 +29,9 @@ class GANtrainer(object):
         self.dataroot = "./data/selected_cartoonset100k"
         self.outroot = "./out"
         self.modelroot = "./model"
-        self.model_dump = "./model/models.tar"
+        self.model_load = "./model/models_ep65.tar"
         self.workers = 2
-        self.batch_size = 32
+        self.batch_size = 16
         self.image_size = 64
         self.n_class = 15
         self.LAMBDA = 10
@@ -42,7 +40,7 @@ class GANtrainer(object):
         self.nz = 200 # Size of z latent vector (i.e. size of generator input)
         self.ngf = 64 # Size of feature maps in generator
         self.ndf = 64 # Size of feature maps in discriminator
-        self.num_epochs = 50 # Number of training epochs
+        self.num_epochs = 100 # Number of training epochs
         self.lr = 2e-4 # Learning rate for optimizers
         self.beta1 = 0.5 # Beta1 hyperparam for Adam optimizers
         self.ngpu = 1  # Number of GPUs available. Use 0 for CPU mode.
@@ -116,7 +114,7 @@ class GANtrainer(object):
             'netD': self.netD.state_dict(),
             'G_losses': self.G_losses,
             'D_losses': self.D_losses,
-        }, self.model_dump)
+        }, os.path.join(self.modelroot, f"models_ep{epoch}.tar"))
 
     def load_model(self, ckptname):
         print("> Loading..")
@@ -157,13 +155,12 @@ class GANtrainer(object):
         self.G_losses = []
         self.D_losses = []
         iters = 0
-        # self.save_model(0)
-        # self.load_model(self.model_dump)
 
         print("Starting Training Loop...")
         # For each epoch
         for epoch in range(self.num_epochs):
             # For each batch in the dataloader
+            # self.save_model(epoch)
             for i, data in enumerate(self.dataloader):
                 image, label = data['image'], data['feature']
                 if image.size()[0] != self.batch_size:
@@ -173,8 +170,7 @@ class GANtrainer(object):
                 real_ = Variable(torch.ones(real_label.size()[0])).cuda()
 
                 noise = Variable(torch.Tensor(self.batch_size, self.nz).normal_(0, 1)).cuda()
-                fake_label = real_label # Variable(torch.LongTensor(self.batch_size).random_(self.n_class)).cuda()
-                # noise.mul_(self.embedding(fake_label))
+                fake_label = real_label
                 fake_ = Variable(torch.zeros(fake_label.size()[0])).cuda()
 
                 ############################
@@ -233,10 +229,11 @@ class GANtrainer(object):
             vutils.save_image(self.denorm(fake_input.data), f'images/fake/fake_{epoch:03d}.jpg')
             vutils.save_image(self.denorm(real_input.data), f'images/real/real_{epoch:03d}.jpg')
 
-            self.save_model(0)
+            if (epoch+1) % 5 == 0:
+                self.save_model(epoch+1)
 
     def gen_output(self, iters=5):
-        self.load_model(self.model_dump)
+        self.load_model(self.model_load)
         self.generating_conditions()
         output_image = []
         count = 0
@@ -249,6 +246,6 @@ class GANtrainer(object):
                     out = self.netG(fixed_noise, label)
                     vutils.save_image(self.denorm(out.data), f'test_output/{count}.png')
                     count+=1
-                    if count > 5000:
+                    if count >= 5000:
                         exit()
 

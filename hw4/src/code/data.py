@@ -3,7 +3,6 @@ import torch
 import pandas as pd
 from skimage import io
 from torch.utils.data import Dataset, DataLoader
-
 # from IPython import embed
 
 class Cartoonset100kDataset(Dataset):
@@ -15,7 +14,6 @@ class Cartoonset100kDataset(Dataset):
                     self.cartoon_info.append(line.split())
 
         self.cartoon_info = pd.DataFrame(self.cartoon_info[1:], columns=["file_name"]+self.cartoon_info[0])
-
         self.root_dir = root_dir
         self.transform = transform
 

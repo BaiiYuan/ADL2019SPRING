@@ -1,29 +1,22 @@
 import argparse
 import sys
 import ipdb
-import random
-
-import torch
-import torchvision.transforms as transforms
-
 from IPython import embed
 
+from train import setting_seed
 from trainer import GANtrainer
-
-USE_CUDA = torch.cuda.is_available()
-device = torch.device("cuda" if USE_CUDA else "cpu")
+from argument import add_arguments, USE_CUDA, device
 
 def main(args):
-
     trainer = GANtrainer(args)
     trainer.init_model()
-    trainer.gen_output(iters=40)
-
+    trainer.gen_output(iters=5)
 
 if __name__ == '__main__':
      with ipdb.launch_ipdb_on_exception():
         sys.breakpointhook = ipdb.set_trace
         print(device)
         parser = argparse.ArgumentParser()
+        parser = add_arguments(parser)
         args = parser.parse_args()
         main(args)
