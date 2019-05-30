@@ -60,8 +60,24 @@
   - FID score: 63.257
 
 - Batch size: 8
-  - 梯度爆炸:  69 epoch
-  - FID score: 63.257
+  - 梯度爆炸:  62 epoch
+  - FID score: 58.160
+
+發現：
+
+如下表格所示：
+
+|             Batch Size: 16             |             Batch Size: 8             |
+| :------------------------------------: | :-----------------------------------: |
+| <img src="exp1_img/results0_bs16.png"> | <img src="exp1_img/results0_bs8.png"> |
+
+可以發現，兩者最大的差異在於：眼鏡的明顯程度。
+
+對於這種比較小的feature，比較小的batch size在train的過程迭代較慢，但卻有比較精細的結果。
+
+我也發現右邊的藍色眼睛Train的比較明顯。
+
+
 
 #### Experiment2: Condition on Label
 
