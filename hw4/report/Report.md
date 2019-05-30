@@ -54,28 +54,33 @@
 - Batch size: 32
   - 梯度爆炸:   epoch
   - FID score: 
-
 - Batch size: 16
-  - 梯度爆炸:  69 epoch
+  - 梯度爆炸:  @69 epoch
   - FID score: 63.257
-
 - Batch size: 8
-  - 梯度爆炸:  62 epoch
+  - 梯度爆炸:  @62 epoch
   - FID score: 58.160
+- Batch size: 4
+  - 梯度爆炸:  未發生
+  - FID score: 27.616 (100 epoch)
 
-##### 發現：
+#### 發現：
 
-如下表格所示：
+1. ##### Batch Size: 16 v.s. Batch Size: 8
 
-|             Batch Size: 16             |             Batch Size: 8             |
-| :------------------------------------: | :-----------------------------------: |
-| <img src="exp1_img/results0_bs16.png"> | <img src="exp1_img/results0_bs8.png"> |
+   如下表格所示：
 
-可以發現，兩者最大的差異在於：眼鏡的明顯程度。
+   |             Batch Size: 16             |             Batch Size: 8             |
+   | :------------------------------------: | :-----------------------------------: |
+   | <img src="exp1_img/results0_bs16.png"> | <img src="exp1_img/results0_bs8.png"> |
 
-對於這種比較小的feature，比較小的batch size在train的過程迭代較慢，但卻有比較精細的結果。
+   可以發現，兩者最大的差異在於：眼鏡的明顯程度。
 
-我也發現右邊的藍色眼睛Train的比較明顯。
+   對於這種比較小的feature，比較小的batch size在train的過程迭代較慢，但卻有比較精細的結果。
+
+   我也發現右邊的藍色眼睛Train的比較明顯。
+
+2. ##### Batch Size: 8 v.s. Batch Size: 4
 
 
 
@@ -83,5 +88,5 @@
 
 
 
-#### Experiment3: Different batch size
+#### Experiment3:
 
