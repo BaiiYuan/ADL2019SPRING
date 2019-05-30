@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from IPython import embed
 
 from argument import USE_CUDA, device
-from models import Generator, Discriminator
+from models import Generator, Discriminator, SNDiscriminator
 # from model_land import Generator, Discriminator
 
 class GANtrainer(object):
@@ -25,9 +25,9 @@ class GANtrainer(object):
         super(GANtrainer, self).__init__()
         # self.dataroot = "./data/selected_cartoonset100k"
         # self.outroot = "./out"
-        self.output_dir = args.output_dir
         self.modelroot = args.model_saved_path
-        self.model_load = "./model/models_ep65.tar"
+        self.imageroot = args.image_saved_path
+        self.model_load = "./model/models_ep60.tar"
         self.workers = 2
         self.batch_size = args.batch_size
         self.image_size = 128
@@ -43,8 +43,7 @@ class GANtrainer(object):
         self.beta1 = 0.5 # Beta1 hyperparam for Adam optimizers
         self.ngpu = 1  # Number of GPUs available. Use 0 for CPU mode.
 
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+        self.SN_FLAG = False
 
     def generating_conditions(self):
         num_feat = [6, 4, 3, 2]
@@ -83,14 +82,17 @@ class GANtrainer(object):
 
     def init_model(self):
         self.netG = Generator(self.ngpu, self.nz, self.ngf, self.nc).to(device)
-        if (device.type == 'cuda') and (self.ngpu > 1):
-            netG = nn.DataParallel(self.netG, list(range(self.ngpu)))
         print(self.netG)
 
-        self.netD = Discriminator(self.ngpu, self.nc, self.ndf, self.n_class).to(device)
-        if (device.type == 'cuda') and (self.ngpu > 1):
-            self.netD = nn.DataParallel(self.netD, list(range(self.ngpu)))
+        if self.SN_FLAG:
+            self.netD = SNDiscriminator(self.ngpu, self.nc, self.ndf, self.n_class).to(device)
+        else:
+            self.netD = Discriminator(self.ngpu, self.nc, self.ndf, self.n_class).to(device)
         print(self.netD)
+
+        if (device.type == 'cuda') and (self.ngpu > 1):
+            netG = nn.DataParallel(self.netG, list(range(self.ngpu)))
+            self.netD = nn.DataParallel(self.netD, list(range(self.ngpu)))
 
         # self.criterion = nn.BCELoss()
         self.bce = nn.BCELoss().cuda()
@@ -101,15 +103,18 @@ class GANtrainer(object):
         self.real_label = 1
         self.fake_label = 0
 
-        self.optimizerD = optim.Adam(self.netD.parameters(), lr=self.lr, betas=(self.beta1, 0.999))
+        if self.SN_FLAG:
+            self.optimizerD = optim.Adam(filter(lambda p: p.requires_grad, self.netD.parameters()), lr=self.lr, betas=(self.beta1, 0.999))
+        else:
+            self.optimizerD = optim.Adam(self.netD.parameters(), lr=self.lr, betas=(self.beta1, 0.999))
         self.optimizerG = optim.Adam(self.netG.parameters(), lr=self.lr, betas=(self.beta1, 0.999))
 
-        if not os.path.exists('images/fake'):
-            os.makedirs('images/fake')
-        if not os.path.exists('images/real'):
-            os.makedirs('images/real')
-        if not os.path.exists('self.modelroot'):
-            os.makedirs('self.modelroot')
+        if not os.path.exists(os.path.join(self.imageroot,'fake')):
+            os.makedirs(os.path.join(self.imageroot,'fake'))
+        if not os.path.exists(os.path.join(self.imageroot,'real')):
+            os.makedirs(os.path.join(self.imageroot,'real'))
+        if not os.path.exists(self.modelroot):
+            os.makedirs(self.modelroot)
 
 
     def denorm(self, x):
@@ -234,10 +239,13 @@ class GANtrainer(object):
             if (epoch+1) % 5 == 0:
                 self.save_model(epoch+1)
 
-    def gen_output(self, filename, iters=1):
+    def gen_output(self, filename, output_dir, iters=1):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
         self.load_model(self.model_load)
         # self.generating_conditions()
-        if args.filename is not None:
+        if filename is not None:
             self.loading_conditions(filename=filename)
         output_image = []
         count = 0
@@ -248,5 +256,5 @@ class GANtrainer(object):
                     fixed_noise = torch.randn(1, self.nz, device=device)
                     label = Variable(torch.Tensor(label)).float().unsqueeze(0).to(device)
                     out = self.netG(fixed_noise, label)
-                    vutils.save_image(self.denorm(out.data), os.path.join(self.output_dir, f'{count}.png'))
+                    vutils.save_image(self.denorm(out.data), os.path.join(output_dir, f'{count}.png'))
                     count+=1

@@ -4,11 +4,20 @@ from torch.autograd import Variable
 from IPython import embed
 
 from argument import USE_CUDA, device
+from spectral_normalization import SpectralNorm
 
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
         nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
+def weights_init_sn(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight_bar.data, 0.0, 0.02)
     elif classname.find('BatchNorm') != -1:
         nn.init.normal_(m.weight.data, 1.0, 0.02)
         nn.init.constant_(m.bias.data, 0)
@@ -81,22 +90,22 @@ class Discriminator(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
         )
         self.conv2 = nn.Sequential(
-            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 2),
+            nn.Conv2d(ndf, ndf*2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf*2),
             nn.LeakyReLU(0.2, inplace=True),
         )
         self.conv3 = nn.Sequential(
-            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 4),
+            nn.Conv2d(ndf*2, ndf*4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf*4),
             nn.LeakyReLU(0.2, inplace=True),
         )
         self.conv4 = nn.Sequential(
-            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 8),
+            nn.Conv2d(ndf*4, ndf*8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf*8),
             nn.LeakyReLU(0.2, inplace=True),
         )
         self.conv5 = nn.Sequential(
-            nn.Conv2d(ndf * 8*2, ndf * 1, 4, 2, 1, bias=False),
+            nn.Conv2d(ndf*8*2, ndf*1, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
         )
 
@@ -104,7 +113,6 @@ class Discriminator(nn.Module):
         self.aux_linear = nn.Linear(ndf * 1, num_classes)
 
         self.lrelu = nn.LeakyReLU(0.2, inplace=True)
-        # self.sigmoid = nn.Sigmoid()
 
         self.apply(weights_init)
 
@@ -115,6 +123,47 @@ class Discriminator(nn.Module):
         label = label.unsqueeze(2).expand(batch_size, self.ndf*8, 64).view(batch_size, self.ndf*8, 8, 8)
 
         x = self.conv1(input)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = torch.cat([x, label], dim=1)
+        x = self.conv5(x)
+
+        x = x.view(batch_size, -1)
+        x = self.proj(x)
+        s = self.gan_linear(x)
+        c = self.aux_linear(x)
+
+        return s.squeeze(1), c
+
+class SNDiscriminator(nn.Module):
+    def __init__(self, ngpu, nc, ndf, num_classes=15):
+        super(SNDiscriminator, self).__init__()
+        self.ngpu = ngpu
+        self.ndf = ndf
+        self.label_proj = nn.Linear(15, ndf*8)
+        self.proj = nn.Linear(ndf*4*4, ndf)
+
+        self.conv1 = SpectralNorm(nn.Conv2d(nc, ndf, 4, 2, 1, bias=False))
+        self.conv2 = SpectralNorm(nn.Conv2d(ndf, ndf*2, 4, 2, 1, bias=False))
+        self.conv3 = SpectralNorm(nn.Conv2d(ndf*2, ndf*4, 4, 2, 1, bias=False))
+        self.conv4 = SpectralNorm(nn.Conv2d(ndf*4, ndf*8, 4, 2, 1, bias=False))
+        self.conv5 = SpectralNorm(nn.Conv2d(ndf*8*2, ndf*1, 4, 2, 1, bias=False))
+
+        self.gan_linear = nn.Linear(ndf * 1, 1)
+        self.aux_linear = nn.Linear(ndf * 1, num_classes)
+
+        self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+
+        self.apply(weights_init_sn)
+
+    def forward(self, input, label):
+        batch_size = input.size(0)
+
+        label = self.label_proj(label)
+        label = label.unsqueeze(2).expand(batch_size, self.ndf*8, 64).view(batch_size, self.ndf*8, 8, 8)
+
+        x = self.lrelu(self.conv1(input))
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.conv4(x)

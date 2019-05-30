@@ -12,7 +12,8 @@ label_txt = ["./data/sample_test/sample_fid_testing_labels.txt",
 def main(args):
     trainer = GANtrainer(args)
     trainer.init_model()
-    trainer.gen_output(filename=args.testing_labels)
+    trainer.gen_output(filename=args.testing_labels,
+                       output_dir=args.output_dir)
 
 if __name__ == '__main__':
      with ipdb.launch_ipdb_on_exception():
