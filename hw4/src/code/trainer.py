@@ -27,18 +27,19 @@ class GANtrainer(object):
         # self.outroot = "./out"
         self.modelroot = args.model_saved_path
         self.imageroot = args.image_saved_path
-        self.model_load = "./model/models_ep60.tar"
+        self.model_load = "./model/models_ep100.tar"
         self.workers = 2
         self.batch_size = args.batch_size
         self.image_size = 128
         self.n_class = 15
         self.LAMBDA = 10
+        self.start_epoch = 0
 
         self.nc = 3 # Number of channels in the training images. For color images this is 3
         self.nz = 200 # Size of z latent vector (i.e. size of generator input)
         self.ngf = 64 # Size of feature maps in generator
         self.ndf = 64 # Size of feature maps in discriminator
-        self.num_epochs = 100 # Number of training epochs
+        self.num_epochs = 150 # Number of training epochs
         self.lr = 2e-4 # Learning rate for optimizers
         self.beta1 = 0.5 # Beta1 hyperparam for Adam optimizers
         self.ngpu = 1  # Number of GPUs available. Use 0 for CPU mode.
@@ -134,6 +135,7 @@ class GANtrainer(object):
         ckpt = torch.load(ckptname)
         self.netG.load_state_dict(ckpt['netG'])
         self.netD.load_state_dict(ckpt['netD'])
+        self.start_epoch = ckpt['epoch']
 
     def test(self, predict, labels):
         pred = predict.data.max(1)[1]
@@ -161,6 +163,9 @@ class GANtrainer(object):
         return gradient_penalty
 
     def train(self):
+        if os.path.exists(self.model_load):
+            self.load_model(self.model_load)
+
         # Training Loop
         self.netG.train()
         self.netD.train()
@@ -169,9 +174,9 @@ class GANtrainer(object):
         self.D_losses = []
         iters = 0
 
-        print("Starting Training Loop...")
+        print(f"Starting Training Loop with Epoch {self.start_epoch}...")
         # For each epoch
-        for epoch in range(self.num_epochs):
+        for epoch in range(self.start_epoch, self.num_epochs):
             # For each batch in the dataloader
             # self.save_model(epoch)
             for i, data in enumerate(self.dataloader):
