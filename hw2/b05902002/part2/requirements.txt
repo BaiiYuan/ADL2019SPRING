@@ -1,5 +1,5 @@
 ipdb==0.12
-numpy==1.16.1
+numpy==1.22.0
 pandas==0.24.1
 pytorch-pretrained-bert==0.6.1
 torch
